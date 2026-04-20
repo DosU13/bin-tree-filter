@@ -21,6 +21,7 @@ from config import (
     BACKGROUND_COLOR,
     HOMOGENEITY_THRESHOLD,
     MAX_DEPTH,
+    MIN_DEPTH,
     NUM_COLORS,
     ORNAMENT_FILENAME,
 )
@@ -83,12 +84,12 @@ def main() -> None:
     print(f"       Palette (BGR): {palette.tolist()}")
 
     # 3. Build tree -------------------------------------------------
-    print(f"[3/4] Building triangle tree  (depth<={MAX_DEPTH}, threshold={HOMOGENEITY_THRESHOLD}) ...")
+    print(f"[3/4] Building triangle tree  (depth {MIN_DEPTH}-{MAX_DEPTH}, threshold={HOMOGENEITY_THRESHOLD}) ...")
     roots = make_initial_triangles(size)
 
     all_leaves: list = []
     for root_tri in roots:
-        build_tree(posterized, root_tri, MAX_DEPTH, HOMOGENEITY_THRESHOLD)
+        build_tree(posterized, root_tri, MAX_DEPTH, HOMOGENEITY_THRESHOLD, MIN_DEPTH)
         all_leaves.extend(collect_leaves(root_tri))
 
     print(f"       {len(all_leaves)} leaf triangles")

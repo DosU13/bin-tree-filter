@@ -124,23 +124,28 @@ def build_tree(
     tri: Triangle,
     max_depth: int,
     threshold: float,
+    min_depth: int = 0,
 ) -> Triangle:
     """Recursively subdivide *tri* until the region is uniform enough.
 
     Stops when:
-        - The dominant color covers >= *threshold* of the triangle, **or**
+        - depth >= min_depth AND dominant color covers >= *threshold*, **or**
         - *max_depth* is reached.
     """
     color, ratio = _dominant_color(image, tri)
 
-    if ratio >= threshold or tri.depth >= max_depth:
+    if tri.depth >= max_depth:
+        tri.dominant_color = color
+        return tri
+
+    if tri.depth >= min_depth and ratio >= threshold:
         tri.dominant_color = color
         return tri
 
     c1, c2 = subdivide(tri)
     tri.children = [
-        build_tree(image, c1, max_depth, threshold),
-        build_tree(image, c2, max_depth, threshold),
+        build_tree(image, c1, max_depth, threshold, min_depth),
+        build_tree(image, c2, max_depth, threshold, min_depth),
     ]
     return tri
 
