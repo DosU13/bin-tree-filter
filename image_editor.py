@@ -14,6 +14,8 @@ Controls:
     c / C     — decrease / increase number of colours
     p / P     — decrease / increase proc resolution (tree building)
     o / O     — decrease / increase output resolution (render quality)
+    [ / ]     — decrease / increase blur radius
+    ; / '     — decrease / increase sharpen amount
     b / B     — decrease / increase brightness
     n / N     — decrease / increase contrast
     t / T     — decrease / increase saturation
@@ -31,7 +33,7 @@ from config import BACKGROUND_COLOR
 from posterize import posterize
 from triangle_tree import make_initial_triangles, build_tree, collect_leaves
 from renderer import load_ornament_mask, render
-from webcam import apply_filters, _scale_leaves, _put_text
+from webcam import apply_blur, apply_sharpen, apply_filters, _scale_leaves, _put_text
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +48,8 @@ def process_image(
     max_depth: int,
     min_depth: int,
     threshold: float,
+    blur_size: int,
+    sharpen_amount: float,
     brightness: int,
     contrast: float,
     saturation: float,
@@ -57,15 +61,17 @@ def process_image(
 
     Returns:
         output:     Rendered ornament image (out_size x out_size).
-        filtered:   Image after calibration filters.
+        filtered:   Image after blur + sharpen + calibration filters.
         posterized: Image after posterize.
         timings:    Per-step milliseconds.
     """
     timings = {}
 
-    # Step 1 — calibration filters
+    # Step 1 — blur → sharpen → calibration filters
     t0 = time.perf_counter()
-    filtered = apply_filters(image, brightness, contrast, saturation)
+    filtered = apply_blur(image, blur_size)
+    filtered = apply_sharpen(filtered, sharpen_amount)
+    filtered = apply_filters(filtered, brightness, contrast, saturation)
     timings["filter"] = (time.perf_counter() - t0) * 1000
 
     # Step 2 — posterize
@@ -140,6 +146,8 @@ def main() -> None:
     min_depth  = 0
     threshold  = 0.75
     display_size = 800
+    blur_size      = 0
+    sharpen_amount = 0.0
     brightness = 0
     contrast   = 1.0
     saturation = 1.0
@@ -152,6 +160,8 @@ def main() -> None:
     print("  c/C    colors -/+")
     print("  p/P    proc resolution -/+")
     print("  o/O    output resolution -/+")
+    print("  [/]    blur radius -/+")
+    print("  ;/'    sharpen amount -/+")
     print("  b/B    brightness -/+")
     print("  n/N    contrast -/+")
     print("  t/T    saturation -/+")
@@ -168,6 +178,7 @@ def main() -> None:
             output, filtered_img, post_img, last_timings = process_image(
                 source, proc_size, out_size,
                 num_colors, max_depth, min_depth, threshold,
+                blur_size, sharpen_amount,
                 brightness, contrast, saturation,
                 ornament_mask, ornament_mask_inv, src_tri,
             )
@@ -202,7 +213,7 @@ def main() -> None:
             f"total: {total_ms:.0f} ms",
             f"Depth: {min_depth}-{max_depth}  Colors: {num_colors}  Thresh: {threshold:.2f}",
             f"proc={proc_size}  out={out_size}",
-            f"Bright: {brightness:+d}  Contr: {contrast:.2f}  Sat: {saturation:.2f}",
+            f"Blur: {blur_size}  Sharp: {sharpen_amount:.1f}  Bright: {brightness:+d}  Contr: {contrast:.2f}  Sat: {saturation:.2f}",
         ]
         for i, txt in enumerate(lines):
             _put_text(display, txt, 10, 25 + i * 26)
@@ -253,6 +264,14 @@ def main() -> None:
             threshold = max(0.01, round(threshold - 0.01, 2)); dirty = True
         elif key == ord("H"):
             threshold = min(1.0, round(threshold + 0.01, 2));  dirty = True
+        elif key == ord("["):
+            blur_size = max(0, blur_size - 1);              dirty = True
+        elif key == ord("]"):
+            blur_size += 1;                                 dirty = True
+        elif key == ord(";"):
+            sharpen_amount = max(0.0, round(sharpen_amount - 0.2, 1)); dirty = True
+        elif key == ord("'"):
+            sharpen_amount = round(sharpen_amount + 0.2, 1); dirty = True
         elif key == ord("b"):
             brightness -= 10;                               dirty = True
         elif key == ord("B"):

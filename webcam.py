@@ -8,6 +8,8 @@ Controls:
     r / R     — decrease / increase input resolution (filters + posterize)
     p / P     — decrease / increase proc resolution (tree building)
     o / O     — decrease / increase output resolution (render quality)
+    [ / ]     — decrease / increase blur radius
+    ; / '     — decrease / increase sharpen amount
     b / B     — decrease / increase brightness
     n / N     — decrease / increase contrast
     t / T     — decrease / increase saturation
@@ -29,6 +31,22 @@ from renderer import load_ornament_mask, render
 # ---------------------------------------------------------------------------
 # Image calibration filters
 # ---------------------------------------------------------------------------
+
+def apply_blur(image: np.ndarray, blur_size: int) -> np.ndarray:
+    """Gaussian blur. blur_size=0 means no blur; each step adds 2px to the kernel."""
+    if blur_size <= 0:
+        return image
+    k = blur_size * 2 + 1
+    return cv2.GaussianBlur(image, (k, k), 0)
+
+
+def apply_sharpen(image: np.ndarray, amount: float) -> np.ndarray:
+    """Unsharp-mask sharpening. amount=0 means no sharpening."""
+    if amount <= 0:
+        return image
+    blurred = cv2.GaussianBlur(image, (0, 0), 3)
+    return cv2.addWeighted(image, 1.0 + amount, blurred, -amount, 0)
+
 
 def apply_filters(
     image: np.ndarray,
@@ -68,6 +86,8 @@ def process_frame(
     max_depth: int,
     min_depth: int,
     threshold: float,
+    blur_size: int,
+    sharpen_amount: float,
     brightness: int,
     contrast: float,
     saturation: float,
@@ -78,13 +98,12 @@ def process_frame(
     """Run the full ornament pipeline on one square BGR frame.
 
     Pipeline:
-        frame → resize(size) → filters → posterize →
-        resize(proc_size) → build tree → scale vertices →
-        render(out_size)
+        frame → resize(size) → blur → sharpen → filters → posterize →
+        resize(proc_size) → build tree → scale vertices → render(out_size)
 
     Returns:
         output:     Rendered ornament image (out_size x out_size).
-        filtered:   Frame after calibration filters, before posterize.
+        filtered:   Frame after blur + sharpen + calibration filters.
         posterized: Frame after posterize (at size x size).
         timings:    Dict of per-step milliseconds.
     """
@@ -97,9 +116,11 @@ def process_frame(
     square = frame[y0 : y0 + s, x0 : x0 + s]
     square = cv2.resize(square, (size, size))
 
-    # Step 1 — calibration filters
+    # Step 1 — blur → sharpen → calibration filters
     t0 = time.perf_counter()
-    filtered = apply_filters(square, brightness, contrast, saturation)
+    filtered = apply_blur(square, blur_size)
+    filtered = apply_sharpen(filtered, sharpen_amount)
+    filtered = apply_filters(filtered, brightness, contrast, saturation)
     timings["filter"] = (time.perf_counter() - t0) * 1000
 
     # Step 2 — posterize
@@ -166,6 +187,8 @@ def main() -> None:
     min_depth  = 0
     threshold  = 0.75
     display_size = 1280
+    blur_size      = 0
+    sharpen_amount = 0.0
     brightness = 0
     contrast   = 1.0
     saturation = 1.0
@@ -179,6 +202,8 @@ def main() -> None:
     print("  r/R    input resolution -/+   (filters+posterize)")
     print("  p/P    proc resolution -/+    (tree building)")
     print("  o/O    output resolution -/+  (render quality)")
+    print("  [/]    blur radius -/+")
+    print("  ;/'    sharpen amount -/+")
     print("  b/B    brightness -/+")
     print("  n/N    contrast -/+")
     print("  t/T    saturation -/+")
@@ -199,6 +224,7 @@ def main() -> None:
         output, filtered_img, post_img, last_timings = process_frame(
             frame, size, proc_size, out_size,
             num_colors, max_depth, min_depth, threshold,
+            blur_size, sharpen_amount,
             brightness, contrast, saturation,
             ornament_mask, ornament_mask_inv, src_tri,
         )
@@ -241,7 +267,7 @@ def main() -> None:
             f"FPS: {fps:.1f}   total: {total_ms:.0f} ms",
             f"Depth: {min_depth}-{max_depth}  Colors: {num_colors}  Thresh: {threshold:.2f}",
             f"Res: in={size}  proc={proc_size}  out={out_size}",
-            f"Bright: {brightness:+d}  Contr: {contrast:.2f}  Sat: {saturation:.2f}",
+            f"Blur: {blur_size}  Sharp: {sharpen_amount:.1f}  Bright: {brightness:+d}  Contr: {contrast:.2f}  Sat: {saturation:.2f}",
         ]
         for i, txt in enumerate(lines):
             _put_text(display, txt, 10, 25 + i * 26)
@@ -292,6 +318,14 @@ def main() -> None:
             threshold = max(0.01, round(threshold - 0.01, 2))
         elif key == ord("H"):
             threshold = min(1.0, round(threshold + 0.01, 2))
+        elif key == ord("["):
+            blur_size = max(0, blur_size - 1)
+        elif key == ord("]"):
+            blur_size += 1
+        elif key == ord(";"):
+            sharpen_amount = max(0.0, round(sharpen_amount - 0.2, 1))
+        elif key == ord("'"):
+            sharpen_amount = round(sharpen_amount + 0.2, 1)
         elif key == ord("b"):
             brightness -= 10
         elif key == ord("B"):
