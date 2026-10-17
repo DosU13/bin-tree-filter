@@ -238,6 +238,12 @@ class ProjectorOutputs(QObject):
             self.level = min(target, self.level + step) if target > self.level else max(target, self.level - step)
         if not self.visible:
             return
+        # Newest tree state straight from the pipeline thread (not just at the UI poll rate)
+        runner = getattr(self.session, "runner", None)
+        if runner is not None and not getattr(runner, "paused", False):
+            latest = runner.latest()
+            if latest is not None:
+                self.snapshot = latest.snapshot
         for win in self.windows.values():
             if win.isVisible():
                 win.update()

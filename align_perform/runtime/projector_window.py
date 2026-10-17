@@ -7,6 +7,7 @@ comes from the ProjectorOutputs manager; the window only renders it.
 
 from __future__ import annotations
 
+import copy
 import time
 
 import numpy as np
@@ -36,11 +37,24 @@ class ProjectorWindow(RendererWindow):
         self._hud_key = None
         self._black_ready = False
         self.last_draw = 0.0
+        self._view_key = None
+        self._view = None
 
     def on_gl_ready(self) -> None:
         self._tile_id = None
         self._pattern_key = self._identify_key = self._hud_key = None
         self._black_ready = False
+
+    def _cached_view(self, proj, w: int, h: int):
+        """projector_view is costly in Python (blend geometry); rebuild only when inputs change."""
+        m = self.manager
+        p = m.params
+        key = (m.geometry_version, w, h, p["mode"], p["background"], p["depth_bg"], p["polarity"],
+               p["cord"], p["wireframe"])
+        if key != self._view_key:
+            self._view = projector_view(m.scene, proj, w, h, params=p)
+            self._view_key = key
+        return self._view
 
     def draw(self, fbo, w: int, h: int) -> None:
         m = self.manager
@@ -57,7 +71,7 @@ class ProjectorWindow(RendererWindow):
         number = m.number(self.proj_id)
 
         if m.test_pattern:
-            view = projector_view(m.scene, proj, w, h, params=m.params)
+            view = copy.copy(self._cached_view(proj, w, h))
             view.flat = TEST_GREY
             r.render(fbo, view)
             key = (m.geometry_version, w, h, m.corner_sel.get(self.proj_id), number)
@@ -69,7 +83,7 @@ class ProjectorWindow(RendererWindow):
         else:
             if m.snapshot is not None:
                 r.upload(m.snapshot)
-            r.render(fbo, projector_view(m.scene, proj, w, h, params=m.params))
+            r.render(fbo, self._cached_view(proj, w, h))
 
         if m.identify_until > time.perf_counter():
             key = (number, proj.name, w, h)

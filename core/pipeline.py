@@ -226,6 +226,8 @@ class PipelineRunner:
         self.last_error = ""
         self.fps = 0.0
         self.paused = False
+        self.pipeline: Pipeline | None = None
+        self.inject_fault = False          # testing: make the next step raise
         self._thread = threading.Thread(target=self._run, name="pipeline", daemon=True)
 
     def start(self) -> "PipelineRunner":
@@ -262,6 +264,7 @@ class PipelineRunner:
     def _run(self) -> None:
         try:
             pipe = Pipeline(self._scene, realtime=self.realtime)
+            self.pipeline = pipe
         except Exception:
             log.exception("pipeline failed to start")
             self.last_error = "pipeline failed to start"
@@ -273,6 +276,9 @@ class PipelineRunner:
                 start = time.perf_counter()
                 try:
                     self._apply_commands(pipe)
+                    if self.inject_fault:
+                        self.inject_fault = False
+                        raise RuntimeError("injected fault")
                     if not self.paused:
                         dt = min(max(start - prev, 1 / 240), 0.25)
                         result = pipe.step(dt)

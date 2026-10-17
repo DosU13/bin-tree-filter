@@ -149,6 +149,11 @@ class LiveSession(QObject):
 
     # -- misc ----------------------------------------------------------------
 
+    def runner_sources(self) -> list[tuple[str, object]]:
+        """(camera id, source) pairs currently open in the pipeline thread."""
+        pipe = self.runner.pipeline
+        return list(pipe.sources.items()) if pipe is not None else []
+
     @property
     def paused(self) -> bool:
         return self.runner.paused
