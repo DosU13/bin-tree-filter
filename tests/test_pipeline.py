@@ -134,3 +134,14 @@ def test_blend_weights_sum_to_one_in_light(scene):
 def test_stage_view_aspect(scene):
     v = stage_view(scene, 300)
     assert (v.width, v.height) == (300, 100)
+
+
+def test_blend_ramp_is_purely_across_the_overlap(scene):
+    """Outer stage borders don't fade: the ramp near the top edge equals the one in the middle."""
+    spec = blend_spec(scene, scene.projectors[0])
+    assert spec.edges[0].tolist() == [False, True, False, False]   # only the left projector's right edge
+    xs = np.linspace(660 / 540 + 0.005, 960 / 540 - 0.005, 11)    # across the overlap
+    top = blend_alpha(np.stack([xs, np.full_like(xs, 0.01)], axis=1), spec)
+    mid = blend_alpha(np.stack([xs, np.full_like(xs, 0.5)], axis=1), spec)
+    assert np.allclose(top, mid, atol=2e-3)
+    assert top[0] > 0.95 and top[-1] < 0.1

@@ -18,16 +18,19 @@ class BlendSpec:
     """Edge blending between overlapping projectors.
 
     quads:   (n, 4, 2) every enabled projector's area in stage cells (TL, TR, BR, BL;
-             any winding).
+             any winding).  Edge k runs from corner k to corner k + 1.
     feather: (n,) ramp width per projector, in stage cells.
     index:   which quad is the projector being drawn.
     gamma:   projector gamma; light adds linearly, so weights go through ^(1/gamma).
+    edges:   which edges a projector fades towards: only those running inside
+             another projector, so outer borders stay at full brightness.
     """
 
     quads: np.ndarray
     feather: np.ndarray
     index: int
     gamma: float = 2.2
+    edges: np.ndarray | None = None      # (n, 4) bool: edges that fade (default: all)
 
 
 @dataclass
@@ -50,6 +53,7 @@ class RenderView:
     gain: float = 1.0
     blend: BlendSpec | None = None
     outside: tuple = (0, 0, 0)             # BGR outside the stage
+    flat: tuple | None = None              # BGR: draw this flat colour instead (test pattern)
 
     @property
     def px_per_cell(self) -> float:
@@ -110,11 +114,25 @@ def _bbox_overlap(a: np.ndarray, b: np.ndarray) -> float:
     return float(size.min()) if np.all(size > 0) else 0.0
 
 
+def interior_edges(quads: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+    """(n, 4) bool: edge k of quad i runs (partly) inside another quad."""
+    n = len(quads)
+    out = np.zeros((n, 4), dtype=bool)
+    ts = np.linspace(0.1, 0.9, 9)
+    for i in range(n):
+        for k in range(4):
+            a, b = quads[i][k], quads[i][(k + 1) % 4]
+            pts = a[None] + (b - a)[None] * ts[:, None]
+            out[i, k] = any(np.any(geo.quad_distance(pts, quads[j]) > eps) for j in range(n) if j != i)
+    return out
+
+
 def blend_spec(scene, projector) -> BlendSpec | None:
     """Edge-blend settings for *projector*, or None when it overlaps no other projector."""
     ids, quads = projector_quads_cells(scene)
     if projector.id not in ids or len(ids) < 2:
         return None
+    quads = np.array([geo.orient_quad(q) for q in quads])
     cs = scene.stage.cell_size
     feather = np.zeros(len(ids))
     any_overlap = False
@@ -129,7 +147,8 @@ def blend_spec(scene, projector) -> BlendSpec | None:
             feather[i] = max(widest, 1e-6)
     if not any_overlap:
         return None
-    return BlendSpec(quads, feather, ids.index(projector.id), gamma=projector.blend.gamma)
+    return BlendSpec(quads, feather, ids.index(projector.id), gamma=projector.blend.gamma,
+                     edges=interior_edges(quads))
 
 
 def projector_view(scene, projector, width: int | None = None, height: int | None = None,
@@ -150,11 +169,21 @@ def blend_alpha(points_cells: np.ndarray, spec: BlendSpec) -> np.ndarray:
         t = np.clip((x - e0) / (e1 - e0), 0.0, 1.0)
         return t * t * (3 - 2 * t)
 
-    wsum = np.zeros(len(points_cells))
-    wself = np.zeros(len(points_cells))
+    pts = np.asarray(points_cells, dtype=np.float64).reshape(-1, 2)
+    wsum = np.zeros(len(pts))
+    wself = np.zeros(len(pts))
+    edges = spec.edges if spec.edges is not None else np.ones((len(spec.quads), 4), bool)
     for q in range(len(spec.quads)):
-        d = geo.quad_distance(points_cells, spec.quads[q])
-        w = np.where(d <= 0, 0.0, smoothstep(0.0, max(spec.feather[q], 1e-6), d) + 1e-4)
+        quad = np.asarray(spec.quads[q], dtype=np.float64)
+        inside = geo.quad_distance(pts, quad) > 0
+        w = np.ones(len(pts))
+        for k in range(4):
+            if edges[q, k]:
+                a, b = quad[k], quad[(k + 1) % 4]
+                e = b - a
+                n = np.array([-e[1], e[0]]) / max(np.hypot(*e), 1e-12)
+                w *= smoothstep(0.0, max(spec.feather[q], 1e-6), (pts - a) @ n)
+        w = np.where(inside, w + 1e-4, 0.0)
         wsum += w
         if q == spec.index:
             wself = w

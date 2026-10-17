@@ -429,7 +429,25 @@ class MainWindow(QMainWindow):
                 return None
             self.outputs = ProjectorOutputs(self.doc.scene, self.session, key_handler=self.view.keyPressEvent)
             self.outputs.statesChanged.connect(self.status_panel.set_projectors)
+            self.outputs.closedByUser.connect(lambda: self.actions["outputs"].setChecked(False))
+            self.outputs.adjustRequested.connect(self._adjust_projector)
+            if self.session.last is not None:
+                self.outputs.push(self.session.last)
         return self.outputs
+
+    def _adjust_projector(self, proj_id: str, corner, dx: float, dy: float) -> None:
+        """Arrow keys on a projector showing the test pattern: move it, or one warp corner."""
+        def mutate(spec):
+            t = spec.transform
+            if t.corners is not None and corner is not None:
+                t.corners[corner][0] += dx
+                t.corners[corner][1] += dy
+            else:
+                t.x += dx
+                t.y += dy
+                if t.corners is not None:
+                    t.corners = [[x + dx, y + dy] for x, y in t.corners]
+        self.doc.update_item("projector", proj_id, mutate, "Nudge projector", merge_key=f"projector-nudge-{proj_id}")
 
     def output_toggle(self, name: str, on: bool) -> None:
         outputs = self._ensure_outputs()

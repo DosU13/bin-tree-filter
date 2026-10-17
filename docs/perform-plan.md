@@ -275,10 +275,11 @@ Each phase ends in a working, tested state and gets its own commit(s) on `featur
 - **Done when:** every control in the `live.py` docstring has a working UI equivalent (checklist).
 
 ### Phase 6: Projector outputs + physical alignment (medium)
-- [ ] Projector windows (full-screen on a display, or a test window), pixel-exact under Windows display scaling.
-- [ ] Test patterns and "identify projectors".
-- [ ] Edge blending (§5.3) with gamma and per-projector gain controls.
-- [ ] **6b (optional, decision 1):** 4-corner warp for projectors and cameras: corner handles on the canvas, plus fine adjustment with arrow keys while watching the projector.
+- [x] Projector windows (full-screen on a display, or a test window), pixel-exact under Windows display scaling. *(Rendered at the window's physical pixel size; a missing display falls back to a window, or waits with `missing="wait"`.)*
+- [x] Test patterns and "identify projectors". *(The pattern draws over a flat grey field with blending applied, so overlap errors show; blackout fades.)*
+- [x] Edge blending (§5.3) with gamma and per-projector gain controls. *(Projectors fade only towards edges that lie inside another projector, so outer borders stay at full brightness.)*
+- [x] **6b (optional, decision 1):** 4-corner warp for projectors and cameras: corner handles on the canvas, plus fine adjustment with arrow keys while watching the projector. *(Test pattern on: arrows move the projector, Tab picks a corner.)*
+- [ ] Physical test with real projectors: not possible on this PC (one monitor); verified with test windows and a full-screen output on the monitor.
 - **Done when:** with real projectors, the overlap is invisible on a white field and on the ornament.
 
 ### Phase 7: `perform.py` (medium)

@@ -138,3 +138,20 @@ def test_edge_blending_sums_to_one(gl, tree):
     # Outside the overlap each projector is either full or black
     assert np.array_equal(parts[0][:, :90], plain[:, :90].astype(np.uint8))
     assert parts[0][:, 170:].max() == 0
+
+
+@pytest.mark.gpu
+def test_gpu_blend_matches_cpu(gl):
+    """Flat white field through the shader's blend equals core.view.blend_alpha."""
+    import os
+    from core.scene import Scene
+    from core.view import blend_alpha, projector_view
+    scene = Scene.load(os.path.join(ROOT, "scenes", "example.json"))
+    proj = scene.projectors[0]
+    view = projector_view(scene, proj, 192, 108)
+    view.flat = (255, 255, 255)
+    out = gl.render(None, view)[:, :, 0].astype(float) / 255
+    from core.engine import apply_matrix, norm_centres
+    pts = apply_matrix(view.norm_to_cell, norm_centres(192, 108))
+    ref = blend_alpha(pts, view.blend).reshape(108, 192)
+    assert np.abs(out - ref).max() < 2.5 / 255

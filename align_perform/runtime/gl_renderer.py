@@ -145,9 +145,12 @@ uniform int u_edge_w;
 uniform int u_nq;
 uniform vec2 u_quads[32];
 uniform float u_feather[8];
+uniform int u_edges[8];    // bit k: edge k of quad q fades
 uniform int u_self;
 uniform float u_gamma;
 uniform float u_gain;
+uniform bool u_flat;       // test pattern: flat colour instead of the ornament (blend still applies)
+uniform vec3 u_flat_color;
 out vec4 frag;
 
 float tile_coverage(vec2 uv, int level, float lod) {
@@ -186,16 +189,23 @@ bool edge_at(ivec2 c) {
         || k != texelFetch(u_keys, c + ivec2(0, 1), 0).r;   // gl +y = the row above
 }
 
-float quad_distance(vec2 p, int q) {
-    float dist = 1e9;
+float edge_distance(vec2 p, int q, int i) {
+    vec2 a = u_quads[q * 4 + i];
+    vec2 b = u_quads[q * 4 + (i + 1) % 4];
+    vec2 e = b - a;
+    return dot(p - a, normalize(vec2(-e.y, e.x)));
+}
+
+// Blend weight of quad q at p: 0 outside, else the product of ramps towards its
+// fading (interior) edges
+float quad_weight(vec2 p, int q) {
+    float w = 1.0;
     for (int i = 0; i < 4; i++) {
-        vec2 a = u_quads[q * 4 + i];
-        vec2 b = u_quads[q * 4 + (i + 1) % 4];
-        vec2 e = b - a;
-        vec2 n = normalize(vec2(-e.y, e.x));
-        dist = min(dist, dot(p - a, n));
+        float d = edge_distance(p, q, i);
+        if (d <= 0.0) return 0.0;
+        if ((u_edges[q] & (1 << i)) != 0) w *= smoothstep(0.0, max(u_feather[q], 1e-6), d);
     }
-    return dist;
+    return w + 1e-4;
 }
 
 void main() {
@@ -204,7 +214,9 @@ void main() {
     vec2 p = to_cell(pix);
     vec3 col;
 
-    if (!inside(p)) {
+    if (u_flat) {
+        col = u_flat_color;
+    } else if (!inside(p)) {
         col = u_outside;
     } else if (!u_has_state) {
         col = u_bg;
@@ -246,8 +258,7 @@ void main() {
     if (u_nq > 0) {
         float wsum = 0.0, wself = 0.0;
         for (int q = 0; q < u_nq; q++) {
-            float d = quad_distance(p, q);
-            float w = d <= 0.0 ? 0.0 : smoothstep(0.0, max(u_feather[q], 1e-6), d) + 1e-4;
+            float w = quad_weight(p, q);
             wsum += w;
             if (q == u_self) wself = w;
         }
@@ -444,6 +455,8 @@ class GLRenderer:
         _set(p, "u_margin", margin)
         _set(p, "u_edge_w", edge_w)
         _set(p, "u_gain", float(view.gain))
+        _set(p, "u_flat", view.flat is not None)
+        _set(p, "u_flat_color", tuple(float(c) for c in (view.flat or (0, 0, 0))))
         b = view.blend
         if b is not None and len(b.quads):
             quads = _ccw_quads(b.quads)[:MAX_QUADS]
@@ -455,6 +468,12 @@ class GLRenderer:
             _set(p, "u_nq", nq)
             _set(p, "u_quads", data=qdata.tobytes())
             _set(p, "u_feather", data=feather.tobytes())
+            edges = np.ones((MAX_QUADS, 4), bool)
+            if b.edges is not None:
+                edges[:] = False
+                edges[:nq] = np.asarray(b.edges, bool)[:nq]
+            bits = (edges * (1 << np.arange(4))).sum(axis=1).astype(np.int32)
+            _set(p, "u_edges", data=bits.tobytes())
             _set(p, "u_self", int(b.index))
             _set(p, "u_gamma", float(b.gamma))
         else:
