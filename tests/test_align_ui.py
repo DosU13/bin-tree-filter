@@ -19,8 +19,10 @@ EXAMPLE = os.path.join(ROOT, "scenes", "example.json")
 @pytest.fixture(scope="module")
 def app():
     from align_perform.app import make_app
-    from PySide6.QtCore import QSettings
+    from PySide6.QtCore import QCoreApplication, QSettings
     a = make_app()
+    # Own settings store, so tests never touch the user's recent files / layout
+    QCoreApplication.setApplicationName("Align Perform tests")
     QSettings().clear()
     return a
 
