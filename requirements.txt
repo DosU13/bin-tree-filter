@@ -1,3 +1,6 @@
-numpy~=2.2.6
+numpy~=2.5.4
 opencv-python~=4.13.0.92
 pillow~=12.3.0
+PySide6-Essentials~=6.12.0
+moderngl~=5.13.0
+cv2-enumerate-cameras~=1.4.0

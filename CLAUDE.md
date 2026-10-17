@@ -4,13 +4,16 @@ Real-time "Kyrgyz ornament" filter. It turns a webcam, video, GIF or still image
 
 ## Setup
 
-- Windows, Python **3.10** venv in `.venv/` (not committed). numpy 2.3+ needs Python 3.11+, which is why `requirements.txt` pins `numpy~=2.2.6`.
-- Dependencies are only numpy, opencv-python and pillow. Keep `opencv-python` (not `-headless`): `live.py` needs `cv2.imshow`.
+- Windows, Python **3.12** venv in `.venv/` (not committed).
+- Runtime: numpy, opencv-python, pillow, PySide6-Essentials, moderngl, cv2-enumerate-cameras. Dev: pytest (`requirements-dev.txt`). Keep `opencv-python` (not `-headless`): `live.py` needs `cv2.imshow`.
 
 ```
-py -3.10 -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements-dev.txt
+.venv\Scripts\python -m pytest
 ```
+
+Work in progress: `docs/perform-plan.md` (Align Perform + perform.py), tick its checkboxes as phases land.
 
 ## Running
 
@@ -22,16 +25,19 @@ py -3.10 -m venv .venv
 
 Flags: `--out` render size (512), `--proc` statistics size (128), `--levels` deepest precomputed level (12), `--display` window size (900), `--crop` trim the tile's white margin, `--fullscreen`, `--mirror/--no-mirror`. Keyboard controls are listed in the `live.py` docstring; `s` saves `ornament_v2_<timestamp>.png` to the working directory.
 
-There are no tests. To check a change without a display, import `live` and drive `PaletteTracker.update` → `OrnamentEngine.update` → `OrnamentEngine.render` on `me.jpg` / `depth.gif` frames (colour and `--depth` paths), writing the result with `cv2.imwrite`.
+Tests: `python -m pytest` (`tests/`). `tests/data/engine_golden.npz` holds reference renders from the original engine; `test_engine_golden.py` must stay bit-exact unless the picture is meant to change (then regenerate with `python -m tools.make_engine_golden`). `python -m tools.bench` measures per-stage cost.
 
 ## Files
 
 | File | Role |
 |---|---|
-| `live.py` | CLI and main loop: frame sources, pre-filters, depth-band labels, HUD, keyboard, fullscreen |
-| `ornament_engine.py` | `OrnamentEngine`: bintree decisions + rendering, `load_tile` |
-| `stable_posterize.py` | `PaletteTracker`: temporally stable k-means posterizer, palette styles |
-| `config.py` | `ORNAMENT_FILENAME`, `BACKGROUND_COLOR` (BGR) |
+| `live.py` | CLI and main loop: HUD, keyboard, fullscreen (single camera, NumPy renderer) |
+| `core/engine.py` | `OrnamentEngine`: bintree decisions + rendering, `load_tile` |
+| `core/posterize.py` | `PaletteTracker`: temporally stable k-means posterizer, palette styles |
+| `core/sources.py` | Camera / video / GIF / image frame sources |
+| `core/filters.py` | Blur, sharpen, colour filters, depth-band labels, colour presets, hex helpers |
+| `core/params.py` | Registry of every tunable option (UI, hotkeys, JSON, crossfades are generated from it) |
+| `config.py` | `ORNAMENT_FILENAME`, `BACKGROUND_COLOR` (BGR) for live.py |
 | `ornam.jpg` | The ornament tile (black ink on white) |
 | `ornam_or.jpg` | Alternate tile with a white margin (needs `--crop`) |
 | `me.jpg`, `aziz.jpg`, `test_girl_sq.jpg`, `depth.gif` | Sample inputs (`depth.gif` is ~98 MB) |
@@ -43,7 +49,7 @@ There are no tests. To check a change without a display, import `live` and drive
    **Depth mode:** grayscale → band mask `[depth_min, depth_max]` area-downsampled and majority-thresholded → 2 labels; palette = `[BG_PRESETS[i], FG_PRESETS[j]]`.
 3. `engine.update(labels, palette, dt)` then `engine.render(cord, wireframe)` → `out_size`² BGR image, letterboxed into the window.
 
-## OrnamentEngine (`ornament_engine.py`)
+## OrnamentEngine (`core/engine.py`)
 
 The triangle hierarchy is fixed geometry, so everything geometric is precomputed and a frame costs the same regardless of leaf count:
 
@@ -58,7 +64,7 @@ The triangle hierarchy is fixed geometry, so everything geometric is precomputed
 
 All time constants are in seconds and go through `_blend(dt, tau)`, so behaviour is frame-rate independent.
 
-## PaletteTracker (`stable_posterize.py`)
+## PaletteTracker (`core/posterize.py`)
 
 Runs k-means once (`cv2.kmeans`, Lab space, centres sorted by lightness), then per frame does one Lloyd step from the previous centres blended in with an EMA (`tau`), so cluster identities never swap. A pixel keeps its previous label unless another centre is closer by `label_margin` Lab units (kills boundary flicker). Dead clusters are re-seeded at the worst-fit pixel. `style` maps clusters onto a dark→light hex ramp by lightness rank (`PALETTE_STYLES`). Call `reset()` after changing `k` or the proc size.
 

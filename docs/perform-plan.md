@@ -1,6 +1,6 @@
 # Plan: Align Perform + perform.py
 
-Status: **plan only, nothing implemented yet** (written 2026-10-17).
+Status: **in progress** on branch `feature/align-perform` (plan written 2026-10-17). Ticked boxes are done.
 
 Two new pieces on top of the current `live.py` / `ornament_engine.py` / `stable_posterize.py`:
 
@@ -231,14 +231,14 @@ python perform.py scenes/show.json [--look calm] [--windowed] [--wait-for-screen
 
 ## 6. Phases
 
-Each phase ends in a working, tested state and gets its own branch and commit(s). `live.py` must keep working after every phase.
+Each phase ends in a working, tested state and gets its own commit(s) on `feature/align-perform`. `live.py` must keep working after every phase.
 
 ### Phase 0: Groundwork (small)
-- [ ] Settle decision 3 (Python version); if 3.12, recreate the venv and update `requirements.txt`.
-- [ ] Create `core/`: `git mv` the engine and posterizer in; move sources, filters and depth labels out of `live.py`; update imports.
-- [ ] `core/params.py` registry covering every `live.py` option (optionally drive `live.py`'s keys from it).
-- [ ] `tests/` with pytest: render shape and determinism, still frames → stable labels, conforming invariant (neighbouring leaves differ by ≤ 1 level), headless `live.py` smoke run.
-- [ ] `tools/bench.py`.
+- [x] Settle decision 3 (Python version); if 3.12, recreate the venv and update `requirements.txt`. *(Done: Python 3.12.6, numpy 2.5.4.)*
+- [x] Create `core/`: `git mv` the engine and posterizer in; move sources, filters and depth labels out of `live.py`; update imports.
+- [x] `core/params.py` registry covering every `live.py` option (optionally drive `live.py`'s keys from it). *(live.py keeps its own key handling.)*
+- [x] `tests/` with pytest: render shape and determinism, still frames → stable labels, conforming invariant (neighbouring leaves differ by ≤ 1 level), headless `live.py` smoke run. *(Plus golden renders from the original engine in `tests/data/engine_golden.npz`.)*
+- [x] `tools/bench.py`.
 - **Done when:** `live.py` behaves exactly as before and tests pass.
 
 ### Phase 1: Multi-cell engine (medium)
