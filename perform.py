@@ -115,8 +115,11 @@ def rss_mb() -> float:
 
     c = Counters()
     c.cb = ctypes.sizeof(c)
-    proc = ctypes.windll.kernel32.GetCurrentProcess()
-    if ctypes.windll.psapi.GetProcessMemoryInfo(proc, ctypes.byref(c), c.cb):
+    kernel32, psapi = ctypes.windll.kernel32, ctypes.windll.psapi
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE      # 64-bit handle, not a C int
+    psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+    psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+    if psapi.GetProcessMemoryInfo(kernel32.GetCurrentProcess(), ctypes.byref(c), c.cb):
         return c.WorkingSetSize / 1e6
     return 0.0
 
