@@ -16,9 +16,6 @@ class Snapper:
     threshold: float = 10.0
     enabled: bool = True
 
-    def guides(self) -> tuple[list[float], list[float]]:
-        return [], []
-
     def _best(self, values: list[float], targets: list[float]) -> tuple[float, float | None]:
         """Smallest shift (and the target hit) that puts one of *values* on a target."""
         best_d, best_t = None, None

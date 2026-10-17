@@ -6,7 +6,7 @@ import logging
 import os
 
 import cv2
-from PySide6.QtCore import QByteArray, QRectF, QSettings, Qt, QTimer
+from PySide6.QtCore import QByteArray, QSettings, Qt, QTimer
 from PySide6.QtWidgets import (QComboBox, QDockWidget, QFileDialog, QLabel, QMainWindow, QMessageBox, QTabWidget,
                                QToolBar, QWidget)
 

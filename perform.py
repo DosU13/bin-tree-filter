@@ -35,7 +35,6 @@ import time
 import core  # noqa: F401  (OpenCV env before cv2 loads)
 import cv2
 from PySide6.QtCore import QObject, Qt, QTimer
-from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
 from align_perform.app import dark_palette

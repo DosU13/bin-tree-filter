@@ -27,7 +27,6 @@ from PIL import Image
 log = logging.getLogger(__name__)
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
-VIDEO_EXTS = (".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".wmv")
 
 
 # ---------------------------------------------------------------------------

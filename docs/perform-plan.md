@@ -283,12 +283,12 @@ Each phase ends in a working, tested state and gets its own commit(s) on `featur
 - **Done when:** with real projectors, the overlap is invisible on a white field and on the ornament.
 
 ### Phase 7: `perform.py` (medium)
-- [ ] Everything in §5.8.
-- [ ] Soak test: 2 h with video files; unplug/replug a camera; switch a display off/on. If the GIL shows up in profiling, move the pipeline to a subprocess.
+- [x] Everything in §5.8. *(Plus `--status` operator window, `S` snapshots, `--simulate-faults` for testing, `tools/perform_loop.bat` restart loop.)*
+- [ ] Soak test: 2 h with video files; unplug/replug a camera; switch a display off/on. If the GIL shows up in profiling, move the pipeline to a subprocess. *(Running: 2 h with a camera or pipeline fault injected every 20 s. Displays can't be unplugged on this PC; the missing-display paths are covered by tests.)*
 - **Done when:** the soak test runs clean and recovery works.
 
 ### Phase 8: Docs + polish (small)
-- [ ] Update `CLAUDE.md`; add a README section on the workflow (align → save → perform) and a key reference.
+- [x] Update `CLAUDE.md`; add a README section on the workflow (align → save → perform) and a key reference. *(`README.md`, `CLAUDE.md`, `docs/live-parity.md`.)*
 
 Order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8. Phases 2 and 3 only share `core/engine.py`'s interface, so they can run in parallel once phase 1 lands.
 

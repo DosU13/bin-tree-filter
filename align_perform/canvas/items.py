@@ -15,7 +15,7 @@ import copy
 import cv2
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import (QBrush, QColor, QFont, QFontMetrics, QImage, QPainter, QPainterPath, QPen, QPolygonF,
+from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QPainter, QPainterPath, QPen, QPolygonF,
                            QTransform)
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject
 

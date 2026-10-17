@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (QCheckBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
                                QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from align_perform.panels.widgets import HintLabel, combo, dspin, ispin, set_quiet
 from align_perform.runtime.screens import list_screens
-from core import geometry as geo
 from core.scene import ROTATIONS
 
 STATUS_TEXT = {"ok": "running", "starting": "starting…", "stalled": "stalled (no new frames)",

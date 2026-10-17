@@ -10,7 +10,7 @@ from __future__ import annotations
 import itertools
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import QGraphicsScene
 
 from align_perform.canvas.items import CameraItem, PlacedItem, ProjectorItem, STATUS_COLORS, StageItem, quad_polygon

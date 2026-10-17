@@ -8,7 +8,7 @@ import os
 import sys
 
 import core  # noqa: F401  (OpenCV env before cv2 loads)
-from PySide6.QtCore import QCoreApplication, Qt
+from PySide6.QtCore import QCoreApplication
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 

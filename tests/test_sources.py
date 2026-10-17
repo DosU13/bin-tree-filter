@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 
 from core.scene import SourceSpec
-from core.sources import (FrameReader, LiveSource, SourceError, SyncSource, kind_for_path, make_reader,
-                          open_scene_source, probe)
+from core.sources import (FrameReader, LiveSource, SourceError, kind_for_path, make_reader, open_scene_source,
+                          probe)
 from tests.engine_cases import ROOT
 
 CLIP = os.path.join(ROOT, "scenes", "media", "cam_left.mp4")

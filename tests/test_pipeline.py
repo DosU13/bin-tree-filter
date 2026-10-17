@@ -7,7 +7,7 @@ import pytest
 from core import geometry as geo
 from core.pipeline import Pipeline, PipelineRunner
 from core.scene import Scene
-from core.view import BlendSpec, blend_alpha, blend_spec, projector_view, stage_view
+from core.view import blend_alpha, blend_spec, projector_view, stage_view
 from tests.engine_cases import ROOT
 
 EXAMPLE = os.path.join(ROOT, "scenes", "example.json")

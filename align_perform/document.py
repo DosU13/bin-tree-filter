@@ -10,7 +10,6 @@ from __future__ import annotations
 import copy
 import logging
 import os
-import time
 from typing import Callable
 
 from PySide6.QtCore import QObject, QTimer, Signal

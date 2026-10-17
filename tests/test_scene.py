@@ -5,8 +5,7 @@ import numpy as np
 import pytest
 
 from core import params as P
-from core.scene import (CameraSpec, ProjectorSpec, Scene, SceneError, SourceSpec, Stage,
-                        Transform)
+from core.scene import CameraSpec, ProjectorSpec, Scene, SceneError, Stage, Transform
 from tests.engine_cases import ROOT
 
 EXAMPLE = os.path.join(ROOT, "scenes", "example.json")
