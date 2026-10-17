@@ -242,8 +242,8 @@ Each phase ends in a working, tested state and gets its own commit(s) on `featur
 - **Done when:** `live.py` behaves exactly as before and tests pass.
 
 ### Phase 1: Multi-cell engine (medium)
-- [ ] Generalise the bintree to `cols × rows` cells (§5.2); split into `OrnamentTree` + `NumpyRenderer`.
-- [ ] Tests: a 1×1 stage is bit-identical to today's engine; conforming holds across cell borders; three side-by-side renders equal one wide render (no seams).
+- [x] Generalise the bintree to `cols × rows` cells (§5.2); split into `OrnamentTree` + `NumpyRenderer`. *(Renderers take a 3×3 matrix from normalised output coords to stage cells, so homographies already work.)*
+- [x] Tests: a 1×1 stage is bit-identical to today's engine; conforming holds across cell borders; three side-by-side renders equal one wide render (no seams). *(Exact except cord lines lying exactly on a tile's first column, which the NumPy renderer can't see.)*
 - **Done when:** the tests pass and `live.py` looks unchanged.
 
 ### Phase 2: GPU renderer (medium–large, the main technical risk, so done early)

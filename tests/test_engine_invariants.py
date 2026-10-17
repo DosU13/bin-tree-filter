@@ -7,20 +7,20 @@ from core.engine import OrnamentEngine, load_tile
 from tests.engine_cases import ROOT, frame_labels
 
 
-def check_tree(eng) -> None:
-    split = eng._split
-    lm = eng.max_level
-    offsets = eng._offsets
-    sizes = [offsets[l + 1] - offsets[l] for l in range(lm)] + [len(split) - offsets[lm]]
+def check_tree(tree) -> None:
+    split = tree.split
+    lm = tree.max_level
+    offsets = tree.offsets
+    sizes = tree.sizes
     for level in range(1, lm + 1):
         s = split[offsets[level] : offsets[level] + sizes[level]]
         parent = split[offsets[level - 1] : offsets[level - 1] + sizes[level - 1]]
         # A node is only split if its parent is
         assert not np.any(s & ~np.repeat(parent, 2)), f"orphan split at level {level}"
-    if eng.conforming:
+    if tree.conforming:
         for level in range(lm + 1):
             s = split[offsets[level] : offsets[level] + sizes[level]]
-            nb = eng._base_nb[level]
+            nb = tree.base_nb[level]
             has = nb >= 0
             # Splitting a triangle splits its base neighbour too
             assert np.all(s[has] == s[nb[has]]), f"non-conforming split at level {level}"
@@ -35,7 +35,7 @@ def test_tree_rules_hold(conforming):
     for f in range(8):
         labels, pal = frame_labels("me.jpg", 48, 4, f)
         eng.update(labels, pal, 1 / 30)
-        check_tree(eng)
+        check_tree(eng.tree)
     assert eng.leaf_count > 20
 
 
