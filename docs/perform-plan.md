@@ -318,3 +318,21 @@ Order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8. Phases 2 and 3 only sh
 | Cameras' auto-exposure / white balance differ, making seams visible in the input | Per-camera colour fix, one shared palette, try disabling auto-exposure (depends on the driver) |
 | CPU pipeline + capture threads + UI fight over the GIL | Measure; move the pipeline to a subprocess with shared memory if needed |
 | Python 3.10 end of life | Decision 3 |
+
+---
+
+## 9. Results (build of 2026-10-17/18)
+
+All phases were built on `feature/align-perform` (one or more commits per phase), using the defaults in §1: Python 3.12, rectangles plus 4-corner warp, unattended + live-operated show, names `perform.py` / `align_perform/`.
+
+| Measure | Result (i7-12700, RTX 2070) |
+|---|---|
+| Projector render, 1080p | 1.2 ms on the GPU (NumPy reference: 108 ms) |
+| Pipeline, 3 cameras on a 3-cell stage | ~14–15 ms per frame, 55–58 fps |
+| Tests | 127 (`python -m pytest`), including real-window GUI and GPU parity tests |
+
+**Verified here:** stitching three overlapping cameras back into the original panorama (also rotated / mirrored), seamless rendering across cells and projectors, GPU output matching the NumPy reference within 2–3 levels, edge blending summing to uniform light, the editor driven by simulated mouse and keys, projector windows (test windows and full screen on this PC's monitor), `perform.py` surviving injected camera and pipeline failures.
+
+**Not verifiable on this PC:** real projectors (one monitor only), unplugging a display, and a real webcam. The attached "HD 720P webcam" enumerates and opens but delivers no frames through Media Foundation or DirectShow in any format (Windows camera access is allowed and no other app holds it), so check its cable / privacy shutter before relying on it. The scene sources keep retrying such a camera without disturbing the rest of the show.
+
+**Soak test:** pending (2 h of `perform.py --simulate-faults 20` on the example scene; log in `out/soak/`).
