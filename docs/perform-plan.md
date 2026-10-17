@@ -262,10 +262,10 @@ Each phase ends in a working, tested state and gets its own commit(s) on `featur
 - **Done when:** the example (3 video cameras, 2 virtual projectors) renders with no visible seams.
 
 ### Phase 4: Align Perform shell + canvas (large)
-- [ ] App, main window, document + undo, actions, canvas items / handles / snapping / zoom / pan, scene tree, inspector.
-- [ ] Add Camera (names via `cv2-enumerate-cameras`) and Add Projector (displays via `QGuiApplication.screens()`) dialogs.
-- [ ] Engine thread; live stage preview and camera thumbnails on the canvas.
-- [ ] Open / Save / Save As / Recent, unsaved-changes prompt, autosave.
+- [x] App, main window, document + undo, actions, canvas items / handles / snapping / zoom / pan, scene tree, inspector.
+- [x] Add Camera (names via `cv2-enumerate-cameras`) and Add Projector (displays via `QGuiApplication.screens()`) dialogs.
+- [x] Engine thread; live stage preview and camera thumbnails on the canvas. *(`runtime/session.py`: the GPU renders exactly the visible world area at screen resolution; view modes Ornament / Stitched input / Labels / Camera images.)*
+- [x] Open / Save / Save As / Recent, unsaved-changes prompt, autosave.
 - **Done when:** you can build, edit (with undo), save and reopen a 3-camera / 2-projector scene from video files and watch it live.
 
 ### Phase 5: Look panel, every live option (medium)

@@ -50,6 +50,8 @@ class Compositor:
         cs = stage.cell_size / proc_size
         self._grid_to_world = np.array([[cs, 0.0, stage.x], [0.0, cs, stage.y], [0.0, 0.0, 1.0]])
         self.maps: dict[str, CameraMap] = {}
+        # Last downscaled (colour-fixed) frame per camera, for UI thumbnails
+        self.last_small: dict[str, np.ndarray] = {}
 
     # -- geometry ------------------------------------------------------------
 
@@ -99,6 +101,7 @@ class Compositor:
 
     def remove(self, cam_id: str) -> None:
         self.maps.pop(cam_id, None)
+        self.last_small.pop(cam_id, None)
 
     # -- per frame -----------------------------------------------------------
 
@@ -114,6 +117,7 @@ class Compositor:
             small = cv2.resize(frame, m.small_size, interpolation=cv2.INTER_AREA)
         c = cam.color
         small = apply_filters(small, c.brightness, c.contrast, c.saturation)
+        self.last_small[cam.id] = small
         if grayscale and small.ndim == 3:
             small = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
         return m, small
@@ -160,6 +164,9 @@ class Compositor:
             band = ((gray >= lo) & (gray <= hi)).astype(np.float32)
             if m.small_size != size:
                 band = cv2.resize(band, m.small_size, interpolation=cv2.INTER_AREA)
+                self.last_small[cam.id] = cv2.resize(frame, m.small_size, interpolation=cv2.INTER_AREA)
+            else:
+                self.last_small[cam.id] = frame
             img = cv2.remap(band, m.map_x, m.map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
             acc[m.box] += img * m.weight
             wsum[m.box] += m.weight
