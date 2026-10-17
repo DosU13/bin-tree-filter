@@ -1,0 +1,266 @@
+{
+  "version": 1,
+  "stage": {
+    "x": 0,
+    "y": 0,
+    "cols": 3,
+    "rows": 1,
+    "cell_size": 540,
+    "levels": 11
+  },
+  "cameras": [
+    {
+      "id": "cam1",
+      "name": "Left",
+      "enabled": true,
+      "source": {
+        "kind": "video",
+        "index": 0,
+        "device_name": "",
+        "backend": "any",
+        "path": "media/cam_left.mp4",
+        "width": 480,
+        "height": 360,
+        "fps": 15,
+        "fourcc": "",
+        "noise": 0.0
+      },
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 720,
+        "height": 540,
+        "rotation": 0,
+        "mirror": false,
+        "corners": null
+      },
+      "color": {
+        "brightness": 0,
+        "contrast": 1.0,
+        "saturation": 1.0
+      },
+      "feather": 135
+    },
+    {
+      "id": "cam2",
+      "name": "Middle",
+      "enabled": true,
+      "source": {
+        "kind": "video",
+        "index": 0,
+        "device_name": "",
+        "backend": "any",
+        "path": "media/cam_mid.mp4",
+        "width": 480,
+        "height": 360,
+        "fps": 15,
+        "fourcc": "",
+        "noise": 0.0
+      },
+      "transform": {
+        "x": 450,
+        "y": 0,
+        "width": 720,
+        "height": 540,
+        "rotation": 0,
+        "mirror": false,
+        "corners": null
+      },
+      "color": {
+        "brightness": 0,
+        "contrast": 1.0,
+        "saturation": 1.0
+      },
+      "feather": 135
+    },
+    {
+      "id": "cam3",
+      "name": "Right",
+      "enabled": true,
+      "source": {
+        "kind": "video",
+        "index": 0,
+        "device_name": "",
+        "backend": "any",
+        "path": "media/cam_right.mp4",
+        "width": 480,
+        "height": 360,
+        "fps": 15,
+        "fourcc": "",
+        "noise": 0.0
+      },
+      "transform": {
+        "x": 900,
+        "y": 0,
+        "width": 720,
+        "height": 540,
+        "rotation": 0,
+        "mirror": false,
+        "corners": null
+      },
+      "color": {
+        "brightness": -12,
+        "contrast": 1.0,
+        "saturation": 1.0
+      },
+      "feather": 135
+    }
+  ],
+  "projectors": [
+    {
+      "id": "proj1",
+      "name": "Left",
+      "enabled": true,
+      "output": {
+        "kind": "window",
+        "screen_name": "",
+        "screen_serial": "",
+        "screen_index": -1,
+        "width": 1920,
+        "height": 1080
+      },
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 960,
+        "height": 540,
+        "rotation": 0,
+        "mirror": false,
+        "corners": null
+      },
+      "blend": {
+        "feather": "auto",
+        "gamma": 2.2
+      },
+      "gain": 1.0
+    },
+    {
+      "id": "proj2",
+      "name": "Right",
+      "enabled": true,
+      "output": {
+        "kind": "window",
+        "screen_name": "",
+        "screen_serial": "",
+        "screen_index": -1,
+        "width": 1920,
+        "height": 1080
+      },
+      "transform": {
+        "x": 660,
+        "y": 0,
+        "width": 960,
+        "height": 540,
+        "rotation": 0,
+        "mirror": false,
+        "corners": null
+      },
+      "blend": {
+        "feather": "auto",
+        "gamma": 2.2
+      },
+      "gain": 1.0
+    }
+  ],
+  "params": {
+    "mode": "colour",
+    "max_depth": 9,
+    "min_depth": 0,
+    "threshold": 0.8,
+    "hysteresis": 0.08,
+    "color_hysteresis": 0.15,
+    "conforming": true,
+    "animate": true,
+    "split_time": 0.15,
+    "tau_hist": 0.15,
+    "tau_color": 0.12,
+    "colors": 4,
+    "palette_style": "natural",
+    "palette_tau": 0.6,
+    "label_margin": 4.0,
+    "blur": 0,
+    "sharpen": 0.0,
+    "brightness": 0,
+    "contrast": 1.0,
+    "saturation": 1.0,
+    "depth_min": 60,
+    "depth_max": 140,
+    "depth_fg": "#a00000",
+    "depth_bg": "#d2ebf5",
+    "polarity": "alternate",
+    "cord": false,
+    "wireframe": false,
+    "background": "#fdd9b5",
+    "tile": "ornam.jpg",
+    "tile_crop": false,
+    "proc_size": 128
+  },
+  "looks": {
+    "calm": {
+      "mode": "colour",
+      "max_depth": 7,
+      "min_depth": 0,
+      "threshold": 0.7,
+      "hysteresis": 0.08,
+      "color_hysteresis": 0.15,
+      "conforming": true,
+      "animate": true,
+      "split_time": 0.15,
+      "tau_hist": 0.15,
+      "tau_color": 0.12,
+      "colors": 4,
+      "palette_style": "natural",
+      "palette_tau": 0.6,
+      "label_margin": 4.0,
+      "blur": 0,
+      "sharpen": 0.0,
+      "brightness": 0,
+      "contrast": 1.0,
+      "saturation": 1.0,
+      "depth_min": 60,
+      "depth_max": 140,
+      "depth_fg": "#a00000",
+      "depth_bg": "#d2ebf5",
+      "polarity": "alternate",
+      "cord": false,
+      "wireframe": false,
+      "background": "#fdd9b5",
+      "tile": "ornam.jpg",
+      "tile_crop": false,
+      "proc_size": 128
+    },
+    "busy": {
+      "mode": "colour",
+      "max_depth": 11,
+      "min_depth": 0,
+      "threshold": 0.9,
+      "hysteresis": 0.08,
+      "color_hysteresis": 0.15,
+      "conforming": true,
+      "animate": true,
+      "split_time": 0.15,
+      "tau_hist": 0.15,
+      "tau_color": 0.12,
+      "colors": 4,
+      "palette_style": "natural",
+      "palette_tau": 0.6,
+      "label_margin": 4.0,
+      "blur": 0,
+      "sharpen": 0.0,
+      "brightness": 0,
+      "contrast": 1.0,
+      "saturation": 1.0,
+      "depth_min": 60,
+      "depth_max": 140,
+      "depth_fg": "#a00000",
+      "depth_bg": "#d2ebf5",
+      "polarity": "alternate",
+      "cord": true,
+      "wireframe": false,
+      "background": "#fdd9b5",
+      "tile": "ornam.jpg",
+      "tile_crop": false,
+      "proc_size": 128
+    }
+  }
+}

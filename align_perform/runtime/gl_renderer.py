@@ -20,59 +20,11 @@ import moderngl
 import numpy as np
 
 from core.engine import TreeSnapshot
+from core.view import BlendSpec, RenderView  # noqa: F401  (re-exported)
 
 NODE_TEX_W = 2048
 MAX_QUADS = 8
 POLARITY_CODES = {"alternate": 0, "none": 1, "invert": 2}
-
-
-@dataclass
-class BlendSpec:
-    """Edge blending between overlapping projectors.
-
-    quads:   (n, 4, 2) corners of every projector's area in stage cells, in
-             TL, TR, BR, BL order (any winding is accepted).
-    feather: (n,) ramp width per projector, in stage cells.
-    index:   which quad is the projector being drawn.
-    gamma:   projector gamma; light adds linearly, so weights go through ^(1/gamma).
-    """
-
-    quads: np.ndarray
-    feather: np.ndarray
-    index: int
-    gamma: float = 2.2
-
-
-@dataclass
-class RenderView:
-    """Where and how to draw.
-
-    norm_to_cell: 3x3 matrix from normalised output coords (u right, v down,
-                  0..1 over the whole output) to stage cells.
-    """
-
-    width: int
-    height: int
-    norm_to_cell: np.ndarray
-    background: tuple = (181, 217, 253)    # BGR 0..255
-    polarity: str = "alternate"
-    cord: bool = False
-    wireframe: bool = False
-    supersample: int = 2
-    mip: bool = True
-    gain: float = 1.0
-    blend: BlendSpec | None = None
-    outside: tuple = (0, 0, 0)             # BGR outside the stage
-
-    @property
-    def px_per_cell(self) -> float:
-        m = np.asarray(self.norm_to_cell, dtype=np.float64)
-        jac = m[:2, :2] / m[2, 2]
-        return self.width / max(float(np.hypot(jac[0, 0], jac[1, 0])), 1e-9)
-
-    @property
-    def cord_width(self) -> int:
-        return max(1, int(round(self.px_per_cell)) // 256)
 
 
 # ---------------------------------------------------------------------------

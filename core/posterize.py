@@ -52,8 +52,13 @@ class PaletteTracker:
         self.centers = None
         self._labels = None
 
-    def update(self, bgr: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
+    def update(self, bgr: np.ndarray, dt: float, mask: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
         """Posterize one frame.
+
+        Args:
+            mask: Optional (H, W) bool; only these pixels shape the palette
+                  (e.g. the parts of the stage some camera actually sees).
+                  Every pixel still gets a label.
 
         Returns:
             labels:  (H, W) int64 cluster index per pixel.
@@ -61,10 +66,18 @@ class PaletteTracker:
         """
         lab = cv2.cvtColor(bgr.astype(np.float32) / 255, cv2.COLOR_BGR2Lab)
         x = lab.reshape(-1, 3)
+        fit = None if mask is None else mask.reshape(-1)
+        xf = x if fit is None else x[fit]
+        if len(xf) < self.k:
+            # Nothing (or almost nothing) to learn from: keep the current palette
+            if self.centers is None or len(self.centers) != self.k:
+                return np.zeros(bgr.shape[:2], dtype=np.int64), np.zeros((self.k, 3), np.float32)
+            d = ((x[:, None, :] - self.centers[None, :, :]) ** 2).sum(axis=2)
+            return d.argmin(axis=1).reshape(bgr.shape[:2]), self.palette()
 
         if self.centers is None or len(self.centers) != self.k:
             criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.5)
-            _, _, c = cv2.kmeans(x, self.k, None, criteria, 3, cv2.KMEANS_PP_CENTERS)
+            _, _, c = cv2.kmeans(np.ascontiguousarray(xf), self.k, None, criteria, 3, cv2.KMEANS_PP_CENTERS)
             self.centers = c[np.argsort(c[:, 0])]
             self._labels = None
 
@@ -79,14 +92,16 @@ class PaletteTracker:
             labels = np.where(keep, prev, labels)
 
         # One Lloyd step from the previous centres, blended in with an EMA
-        counts = np.bincount(labels, minlength=self.k)
-        sums = np.stack([np.bincount(labels, weights=x[:, i], minlength=self.k) for i in range(3)], axis=1)
+        lf = labels if fit is None else labels[fit]
+        df = d if fit is None else d[fit]
+        counts = np.bincount(lf, minlength=self.k)
+        sums = np.stack([np.bincount(lf, weights=xf[:, i], minlength=self.k) for i in range(3)], axis=1)
         new_c = c.copy()
         has = counts > 0
         new_c[has] = sums[has] / counts[has, None]
         # Re-seed a dead cluster at the worst-represented pixel
         for j in np.flatnonzero(~has):
-            new_c[j] = x[d.min(axis=1).argmax()]
+            new_c[j] = xf[df.min(axis=1).argmax()]
         a = 1.0 if self.tau <= 0 else float(1.0 - np.exp(-dt / self.tau))
         self.centers = (c + a * (new_c - c)).astype(np.float32)
         self._labels = labels

@@ -254,11 +254,11 @@ Each phase ends in a working, tested state and gets its own commit(s) on `featur
 - **Done when:** parity and the benchmark pass.
 
 ### Phase 3: Scene, compositor, pipeline, headless (medium)
-- [ ] `scene.py` (JSON v1, validation, relative paths, round-trip test), `geometry.py`.
-- [ ] `sources.py`: probe the real resolution, MJPG/fps requests, reconnect watchdog, looping video files that stay in step.
-- [ ] `compositor.py` (§5.4), `blend.py`, `pipeline.py` (rebuild maps only when geometry changes).
-- [ ] `tools/render_scene.py`: run a scene with video-file cameras and write each projector's output as PNG/MP4.
-- [ ] `scenes/example.json` with short test clips.
+- [x] `scene.py` (JSON v1, validation, relative paths, round-trip test), `geometry.py`.
+- [x] `sources.py`: probe the real resolution, MJPG/fps requests, reconnect watchdog, looping video files that stay in step.
+- [x] `compositor.py` (§5.4), `blend.py`, `pipeline.py` (rebuild maps only when geometry changes). *(Blend maths and RenderView builders live in `core/view.py`.)*
+- [x] `tools/render_scene.py`: run a scene with video-file cameras and write each projector's output as PNG/MP4. *(Also writes `projected.png`, the outputs added as light in world space.)*
+- [x] `scenes/example.json` with short test clips. *(`tools/make_test_clips.py` cuts a panorama into 3 overlapping 480×360 clips.)*
 - **Done when:** the example (3 video cameras, 2 virtual projectors) renders with no visible seams.
 
 ### Phase 4: Align Perform shell + canvas (large)
