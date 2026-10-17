@@ -166,6 +166,14 @@ class SceneDocument(QObject):
         if spec != old:
             self.undo.push(ReplaceItemCommand(self, kind, old, spec, text, merge_key))
 
+    def update_derived(self, kind: str, item_id: str, mutate: Callable) -> None:
+        """Change information derived from the hardware (e.g. a detected frame size)
+        without an undo step: undoing it would only make it come straight back."""
+        spec = copy.deepcopy(self.scene.item(kind, item_id))
+        mutate(spec)
+        if spec != self.scene.item(kind, item_id):
+            self._replace_item(kind, spec)
+
     def set_stage(self, stage: Stage, text: str = "Edit stage", merge_key: str | None = None) -> None:
         if stage != self.scene.stage:
             self.undo.push(StageCommand(self, self.scene.stage, stage, text, merge_key))

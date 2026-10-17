@@ -262,3 +262,6 @@ def test_unknown_camera_size_is_learned_from_frames(app, win):
     cam = win.doc.scene.camera(cid)
     assert (cam.source.width, cam.source.height) == (480, 360)
     assert cam.transform.width / cam.transform.height == pytest.approx(4 / 3)
+    # Detection is not an undo step: one undo removes the camera again
+    win.doc.undo.undo()
+    assert cid not in [c.id for c in win.doc.scene.cameras]

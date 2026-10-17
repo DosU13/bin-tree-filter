@@ -212,7 +212,7 @@ class MainWindow(QMainWindow):
                 t = spec.transform
                 if t.corners is None:
                     t.height = t.width / spec.display_aspect()
-            self.doc.update_item("camera", cam.id, mutate, "Detect camera size")
+            self.doc.update_derived("camera", cam.id, mutate)
 
     def _focus_item(self, kind: str, item_id: str) -> None:
         if kind == "stage":
