@@ -1,7 +1,8 @@
 """Real-time ornament filter (v2) — fast, temporally stable, seam-aware.
 
 Uses ornament_engine.OrnamentEngine + stable_posterize.PaletteTracker.
-The original webcam.py / depth_webcam.py are untouched for comparison.
+The original pipeline (webcam.py, depth_webcam.py, ...) lives in old/ on the
+chore/archive-old-pipeline branch, for comparison.
 
 Usage:
     python live.py                     # webcam 0, colour mode
@@ -47,10 +48,58 @@ import numpy as np
 from PIL import Image
 
 from config import BACKGROUND_COLOR, ORNAMENT_FILENAME
-from depth_webcam import BG_PRESETS, FG_PRESETS
 from ornament_engine import POLARITIES, OrnamentEngine, load_tile
 from stable_posterize import PALETTE_STYLES, PaletteTracker
-from webcam import _put_text, apply_blur, apply_filters, apply_sharpen
+
+
+# ---------------------------------------------------------------------------
+# Depth-mode colour presets (BGR)
+# ---------------------------------------------------------------------------
+
+FG_PRESETS = [
+    (0,   0,   160),   # dark red
+    (120, 30,  0),     # dark navy
+    (0,   100, 10),    # dark green
+    (30,  0,   130),   # dark maroon
+    (20,  20,  20),    # near-black
+]
+
+BG_PRESETS = [
+    (245, 235, 210),   # warm cream
+    (255, 245, 220),   # light gold
+    (255, 255, 255),   # white
+    (220, 235, 245),   # cool white
+]
+
+
+# ---------------------------------------------------------------------------
+# Image calibration filters
+# ---------------------------------------------------------------------------
+
+def apply_blur(image: np.ndarray, blur_size: int) -> np.ndarray:
+    """Gaussian blur. blur_size=0 means no blur; each step adds 2px to the kernel."""
+    if blur_size <= 0:
+        return image
+    k = blur_size * 2 + 1
+    return cv2.GaussianBlur(image, (k, k), 0)
+
+
+def apply_sharpen(image: np.ndarray, amount: float) -> np.ndarray:
+    """Unsharp-mask sharpening. amount=0 means no sharpening."""
+    if amount <= 0:
+        return image
+    blurred = cv2.GaussianBlur(image, (0, 0), 3)
+    return cv2.addWeighted(image, 1.0 + amount, blurred, -amount, 0)
+
+
+def apply_filters(image: np.ndarray, brightness: int, contrast: float, saturation: float) -> np.ndarray:
+    """Apply brightness, contrast, and saturation adjustments."""
+    result = cv2.convertScaleAbs(image, alpha=contrast, beta=brightness)
+    if saturation != 1.0:
+        hsv = cv2.cvtColor(result, cv2.COLOR_BGR2HSV).astype(np.float32)
+        hsv[:, :, 1] = np.clip(hsv[:, :, 1] * saturation, 0, 255)
+        result = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +257,12 @@ def compose(output: np.ndarray, fullscreen: bool, windowed_size: int) -> tuple[n
     return canvas, side
 
 
+def put_text(img: np.ndarray, txt: str, x: int, y: int, scale: float = 0.65) -> None:
+    """White text with a black outline, readable on any background."""
+    cv2.putText(img, txt, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), 3)
+    cv2.putText(img, txt, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), 1)
+
+
 def paste_thumb(display: np.ndarray, img: np.ndarray, x: int, y: int, size: int, label: str) -> None:
     display[y - 1 : y + size + 1, x - 1 : x + size + 1] = (255, 255, 255)
     display[y : y + size, x : x + size] = cv2.resize(img, (size, size), interpolation=cv2.INTER_NEAREST)
@@ -340,7 +395,7 @@ def main() -> None:
         ]
         if show_hud:
             for i, txt in enumerate(lines):
-                _put_text(display, txt, 10, 25 + i * 24, scale=0.55)
+                put_text(display, txt, 10, 25 + i * 24, scale=0.55)
 
         cv2.imshow(WINDOW, display)
 
