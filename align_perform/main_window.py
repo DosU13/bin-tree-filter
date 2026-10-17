@@ -195,8 +195,24 @@ class MainWindow(QMainWindow):
         self.canvas.set_camera_status(r.camera_status)
         self.canvas.set_thumbnails(r.thumbnails)
         self.inspector.camera.set_statuses(r.camera_status)
+        self._learn_frame_sizes(r.frame_sizes)
         if self.outputs is not None:
             self.outputs.push(r)
+
+    def _learn_frame_sizes(self, sizes: dict) -> None:
+        """Fill in a camera's frame size the first time real frames arrive (webcams added untested)."""
+        for cam in self.doc.scene.cameras:
+            size = sizes.get(cam.id)
+            if size is None or cam.source.width > 0:
+                continue
+            w, h = size
+
+            def mutate(spec, w=w, h=h):
+                spec.source.width, spec.source.height = w, h
+                t = spec.transform
+                if t.corners is None:
+                    t.height = t.width / spec.display_aspect()
+            self.doc.update_item("camera", cam.id, mutate, "Detect camera size")
 
     def _focus_item(self, kind: str, item_id: str) -> None:
         if kind == "stage":

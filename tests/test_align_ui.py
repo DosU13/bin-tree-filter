@@ -248,3 +248,17 @@ def test_looks_save_crossfade_rename_delete(app, win):
     assert "quiet" not in win.doc.scene.looks
     win.doc.undo.undo()
     assert "quiet" in win.doc.scene.looks
+
+
+def test_unknown_camera_size_is_learned_from_frames(app, win):
+    from core.scene import CameraSpec, SourceSpec, Transform
+    win.doc.add_item("camera", CameraSpec(id="", name="Untested", source=SourceSpec(
+        kind="video", path=os.path.join(ROOT, "scenes", "media", "cam_left.mp4")),
+        transform=Transform(0, 0, 640, 360)))
+    cid = win.doc.scene.cameras[-1].id
+    deadline = time.time() + 8
+    while time.time() < deadline and win.doc.scene.camera(cid).source.width == 0:
+        pump(app, 0.1)
+    cam = win.doc.scene.camera(cid)
+    assert (cam.source.width, cam.source.height) == (480, 360)
+    assert cam.transform.width / cam.transform.height == pytest.approx(4 / 3)

@@ -210,18 +210,28 @@ class FrameReader:
 
 
 class WebcamReader(FrameReader):
+    """Webcam via OpenCV.  With backend "any" on Windows, successive (re)opens alternate
+    between Media Foundation and DirectShow: some cameras only stream through one."""
+
     def __init__(self, spec) -> None:
         self.spec = spec
         self._cap = None
+        self._attempt = 0
 
     def open(self) -> None:
         s = self.spec
         index = resolve_camera_index(s)
-        code = BACKEND_CODES.get(s.backend, cv2.CAP_ANY)
-        cap = cv2.VideoCapture(index, code)
-        if not cap.isOpened() and s.backend == "any" and os.name == "nt":
-            cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
-        if not cap.isOpened():
+        if s.backend == "any" and os.name == "nt":
+            order = (cv2.CAP_MSMF, cv2.CAP_DSHOW) if self._attempt % 2 == 0 else (cv2.CAP_DSHOW, cv2.CAP_MSMF)
+        else:
+            order = (BACKEND_CODES.get(s.backend, cv2.CAP_ANY),)
+        self._attempt += 1
+        cap = None
+        for code in order:
+            cap = cv2.VideoCapture(index, code)
+            if cap.isOpened():
+                break
+        if cap is None or not cap.isOpened():
             raise SourceError(f"cannot open webcam {index}")
         if s.fourcc:
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*s.fourcc[:4].ljust(4)))

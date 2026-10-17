@@ -43,6 +43,7 @@ class FrameResult:
     fps: float = 0.0
     leaves: int = 0
     thumbnails: dict[str, np.ndarray] = field(default_factory=dict)   # small BGR frame per camera
+    frame_sizes: dict[str, tuple[int, int]] = field(default_factory=dict)   # real (w, h) per camera
 
 
 def apply_params(values: dict, tree: OrnamentTree, tracker: PaletteTracker) -> None:
@@ -198,8 +199,9 @@ class Pipeline:
         labels_image = palette[np.minimum(labels, len(palette) - 1)].astype(np.uint8)
         timings["total"] = (time.perf_counter() - t0) * 1000
         thumbs = {cid: img for cid, img in self.compositor.last_small.items() if cid in frames}
+        sizes = {cid: (f.shape[1], f.shape[0]) for cid, f in frames.items()}
         return FrameResult(snap, stage_input, labels_image, covered, timings, status,
-                           leaves=self.tree.leaf_count, thumbnails=thumbs)
+                           leaves=self.tree.leaf_count, thumbnails=thumbs, frame_sizes=sizes)
 
     def close(self) -> None:
         for src in self.sources.values():
