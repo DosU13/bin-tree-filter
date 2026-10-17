@@ -44,11 +44,30 @@ Node indexing:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import cv2
 import numpy as np
 
 
 POLARITIES = ("alternate", "none", "invert")
+
+
+@dataclass
+class TreeSnapshot:
+    """Renderer input: one frame of OrnamentTree state (see OrnamentTree.snapshot)."""
+
+    cols: int
+    rows: int
+    max_level: int
+    amount: np.ndarray               # (n_nodes,) float32
+    color: np.ndarray | None         # (n_nodes, 3) float32 BGR, None before the first update
+    dom: np.ndarray | None           # (n_nodes,) int32
+    version: int = 0
+
+    @property
+    def n_nodes(self) -> int:
+        return len(self.amount)
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +405,15 @@ class OrnamentTree:
             self.color += _blend(dt, self.tau_color) * (target_col - self.color)
 
     # -- per-cell view for renderers ----------------------------------------
+
+    def snapshot(self) -> TreeSnapshot:
+        """Copy of the state a renderer needs, safe to hand to another thread."""
+        return TreeSnapshot(
+            cols=self.cols, rows=self.rows, max_level=self.max_level,
+            amount=self.amount.astype(np.float32, copy=True),
+            color=None if self.color is None else self.color.astype(np.float32, copy=True),
+            dom=None if self.dom is None else self.dom.astype(np.int32, copy=True),
+        )
 
     def visible_levels(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Per finest cell: (node_a, node_b, t, lvl).

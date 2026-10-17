@@ -247,10 +247,10 @@ Each phase ends in a working, tested state and gets its own commit(s) on `featur
 - **Done when:** the tests pass and `live.py` looks unchanged.
 
 ### Phase 2: GPU renderer (medium–large, the main technical risk, so done early)
-- [ ] Start with a short spike: a moderngl context inside a PySide6 `QOpenGLWindow` on Windows; two windows sharing one texture.
-- [ ] Shader renderer (§5.3) including cord and wireframe.
-- [ ] Parity tests against `NumpyRenderer` using a headless context (mean pixel difference under tolerance across states); skipped automatically if there is no GPU.
-- [ ] Benchmark: 2 × 1920×1080 at ≥ 60 fps on the RTX 2070.
+- [x] Start with a short spike: a moderngl context inside a PySide6 `QOpenGLWindow` on Windows; two windows sharing one texture. *(Each window has its own context and uploads the tile itself; `tests/test_qt_gl_windows.py`.)*
+- [x] Shader renderer (§5.3) including cord and wireframe. *(Edge blending and gain are in too.)*
+- [x] Parity tests against `NumpyRenderer` using a headless context (mean pixel difference under tolerance across states); skipped automatically if there is no GPU. *(Max 2–3 levels difference once views avoid pixel centres lying exactly on triangle edges.)*
+- [x] Benchmark: 2 × 1920×1080 at ≥ 60 fps on the RTX 2070. *(1.2 ms per 1080p frame ≈ 850 fps per output; 4K 4.2 ms; with cord 2.3 / 14 ms.)*
 - **Done when:** parity and the benchmark pass.
 
 ### Phase 3: Scene, compositor, pipeline, headless (medium)
