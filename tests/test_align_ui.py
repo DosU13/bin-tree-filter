@@ -208,3 +208,43 @@ def test_add_projector_dialog_window_output(app):
     out = dlg.result_output
     assert out.kind == "window" and (out.width, out.height) == (1280, 800)
     assert dlg.list.count() >= 2           # at least one display listed too
+
+
+def test_look_panel_edits_params_and_follows_mode(app, win):
+    panel = win.look_panel
+    panel.widgets["threshold"].spin.setValue(0.5)
+    assert win.doc.scene.params["threshold"] == pytest.approx(0.5)
+    panel.widgets["cord"].setChecked(True)
+    assert win.doc.scene.params["cord"] is True
+    win.doc.set_param("mode", "depth")
+    pump(app, 0.05)
+    assert panel.widgets["colors"].isHidden() and not panel.widgets["depth_min"].isHidden()
+    assert panel.groups["Colour"].isHidden()
+    win.doc.set_param("mode", "colour")
+    pump(app, 0.05)
+    assert not panel.widgets["colors"].isHidden()
+    # Undo returns the slider too
+    win.doc.undo.undo()
+    win.doc.undo.undo()
+    win.doc.undo.undo()
+    assert panel.widgets["cord"].isChecked() is False
+
+
+def test_looks_save_crossfade_rename_delete(app, win):
+    looks = win.looks_panel
+    win.doc.set_param("max_depth", 5)
+    win.doc.save_look("low")
+    assert win.doc.scene.looks["low"]["max_depth"] == 5
+    win.doc.set_param("max_depth", 11)
+    looks.crossfade("low", 0.4)
+    assert looks.fading
+    pump(app, 0.2)
+    assert win.doc.scene.params["max_depth"] == 11          # document untouched mid-fade
+    pump(app, 0.5)
+    assert not looks.fading and win.doc.scene.params["max_depth"] == 5
+    win.doc.rename_look("low", "quiet")
+    assert "quiet" in win.doc.scene.looks and "low" not in win.doc.scene.looks
+    win.doc.delete_look("quiet")
+    assert "quiet" not in win.doc.scene.looks
+    win.doc.undo.undo()
+    assert "quiet" in win.doc.scene.looks

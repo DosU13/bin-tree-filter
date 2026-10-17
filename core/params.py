@@ -97,11 +97,12 @@ PARAMS: tuple[Param, ...] = (
           help="Lab units a pixel must gain before it switches colour (anti-flicker)"),
 
     # --- Input -------------------------------------------------------------
-    Param("blur", "Blur", "Input", "int", 0, 0, 20, 1, keys=("[", "]")),
-    Param("sharpen", "Sharpen", "Input", "float", 0.0, 0.0, 5.0, 0.2, keys=(";", "'")),
+    # (input filters only shape colour mode; depth mode thresholds the raw frames)
+    Param("blur", "Blur", "Input", "int", 0, 0, 20, 1, keys=("[", "]"), mode="colour"),
+    Param("sharpen", "Sharpen", "Input", "float", 0.0, 0.0, 5.0, 0.2, keys=(";", "'"), mode="colour"),
     Param("brightness", "Brightness", "Input", "int", 0, -100, 100, 10, keys=("b", "B"), mode="colour"),
-    Param("contrast", "Contrast", "Input", "float", 1.0, 0.1, 3.0, 0.1, keys=("n", "N")),
-    Param("saturation", "Saturation", "Input", "float", 1.0, 0.0, 3.0, 0.1, keys=("t", "T")),
+    Param("contrast", "Contrast", "Input", "float", 1.0, 0.1, 3.0, 0.1, keys=("n", "N"), mode="colour"),
+    Param("saturation", "Saturation", "Input", "float", 1.0, 0.0, 3.0, 0.1, keys=("t", "T"), mode="colour"),
 
     # --- Depth -------------------------------------------------------------
     Param("depth_min", "Band min", "Depth", "int", 60, 0, 250, 5, keys=("a", "A"), mode="depth"),

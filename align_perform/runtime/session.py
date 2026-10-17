@@ -74,6 +74,12 @@ class LiveSession(QObject):
     def params(self) -> dict:
         return self.scene.params
 
+    def preview_params(self, values: dict) -> None:
+        """Temporarily run with *values* (look crossfades) without touching the document."""
+        self.scene.params = dict(values)
+        self.runner.set_params(values)
+        self._load_tile()
+
     def _load_tile(self) -> None:
         key = (self.scene.resolve(self.params["tile"]), self.params["tile_crop"])
         if key == self._tile_key:

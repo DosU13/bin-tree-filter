@@ -269,8 +269,9 @@ Each phase ends in a working, tested state and gets its own commit(s) on `featur
 - **Done when:** you can build, edit (with undo), save and reopen a 3-camera / 2-projector scene from video files and watch it live.
 
 ### Phase 5: Look panel, every live option (medium)
-- [ ] Look panel generated from the registry; same hotkeys as `live.py`; per-camera colour fix in the inspector.
-- [ ] Looks: save, rename, delete, crossfade time.
+- [x] Look panel generated from the registry; same hotkeys as `live.py`; per-camera colour fix in the inspector.
+- [x] Looks: save, rename, delete, crossfade time. *(`core/looks.py` LookFader; a crossfade moves only the live output and becomes one undo step at the end.)*
+- [x] Parity checklist: `docs/live-parity.md`.
 - **Done when:** every control in the `live.py` docstring has a working UI equivalent (checklist).
 
 ### Phase 6: Projector outputs + physical alignment (medium)
