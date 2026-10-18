@@ -1,0 +1,199 @@
+{
+  "version": 1,
+  "stage": {
+    "x": 0,
+    "y": 0,
+    "cols": 2,
+    "rows": 1,
+    "cell_size": 1080,
+    "levels": 12
+  },
+  "cameras": [
+    {
+      "id": "cam1",
+      "name": "Camera 1",
+      "enabled": true,
+      "source": {
+        "kind": "webcam",
+        "index": 0,
+        "device_name": "HD 720P webcam",
+        "backend": "any",
+        "path": "",
+        "width": 640,
+        "height": 480,
+        "fps": 0.0,
+        "fourcc": "",
+        "noise": 0.0
+      },
+      "transform": {
+        "x": 0.0,
+        "y": 210.32052349791792,
+        "width": 1016.4292682926828,
+        "height": 762.3219512195121,
+        "rotation": 0,
+        "mirror": false,
+        "corners": null
+      },
+      "color": {
+        "brightness": 0,
+        "contrast": 1.0,
+        "saturation": 1.0
+      },
+      "feather": 230
+    },
+    {
+      "id": "cam2",
+      "name": "Camera 2",
+      "enabled": true,
+      "source": {
+        "kind": "image",
+        "index": 0,
+        "device_name": "",
+        "backend": "any",
+        "path": "T:/Doslan/Downloads/PXL_20260905_115853015.jpg",
+        "width": 1435,
+        "height": 1911,
+        "fps": 30.0,
+        "fourcc": "",
+        "noise": 0.0
+      },
+      "transform": {
+        "x": 971.4731707317073,
+        "y": 107.35752528256984,
+        "width": 649.7560975609756,
+        "height": 865.2849494348602,
+        "rotation": 0,
+        "mirror": false,
+        "corners": null
+      },
+      "color": {
+        "brightness": 0,
+        "contrast": 1.0,
+        "saturation": 1.0
+      },
+      "feather": 97
+    },
+    {
+      "id": "cam3",
+      "name": "Camera 3",
+      "enabled": true,
+      "source": {
+        "kind": "video",
+        "index": 0,
+        "device_name": "",
+        "backend": "any",
+        "path": "T:/Doslan/Downloads/vfrwsuybjms5t0toey2zj7jy.mp4",
+        "width": 1080,
+        "height": 1920,
+        "fps": 60.0,
+        "fourcc": "",
+        "noise": 0.0
+      },
+      "transform": {
+        "x": 1552.5,
+        "y": 0.0,
+        "width": 607.5,
+        "height": 1080,
+        "rotation": 0,
+        "mirror": false,
+        "corners": null
+      },
+      "color": {
+        "brightness": 0,
+        "contrast": 1.0,
+        "saturation": 1.0
+      },
+      "feather": 73
+    }
+  ],
+  "projectors": [
+    {
+      "id": "proj1",
+      "name": "Projector 1",
+      "enabled": true,
+      "output": {
+        "kind": "window",
+        "screen_name": "",
+        "screen_serial": "",
+        "screen_index": -1,
+        "width": 2560,
+        "height": 1440
+      },
+      "transform": {
+        "x": 0.0,
+        "y": 241.6390243902439,
+        "width": 1174.5560975609756,
+        "height": 660.6878048780488,
+        "rotation": 0,
+        "mirror": false,
+        "corners": null
+      },
+      "blend": {
+        "feather": "auto",
+        "gamma": 2.2
+      },
+      "gain": 1.0
+    },
+    {
+      "id": "proj2",
+      "name": "Projector 2",
+      "enabled": true,
+      "output": {
+        "kind": "window",
+        "screen_name": "",
+        "screen_serial": "",
+        "screen_index": -1,
+        "width": 1920,
+        "height": 1080
+      },
+      "transform": {
+        "x": 959.641463414634,
+        "y": 241.6390243902439,
+        "width": 1185.7170731707317,
+        "height": 666.9658536585366,
+        "rotation": 0,
+        "mirror": false,
+        "corners": null
+      },
+      "blend": {
+        "feather": "auto",
+        "gamma": 2.2
+      },
+      "gain": 1.0
+    }
+  ],
+  "params": {
+    "mode": "colour",
+    "max_depth": 8,
+    "min_depth": 0,
+    "threshold": 0.75,
+    "hysteresis": 0.08,
+    "color_hysteresis": 0.15,
+    "conforming": true,
+    "animate": true,
+    "split_time": 0.15,
+    "tau_hist": 0.15,
+    "tau_color": 0.12,
+    "colors": 4,
+    "palette_style": "shyrdak",
+    "palette_tau": 0.6,
+    "label_margin": 4.0,
+    "blur": 0,
+    "sharpen": 0.0,
+    "brightness": 0,
+    "contrast": 1.0,
+    "saturation": 1.0,
+    "depth_min": 60,
+    "depth_max": 140,
+    "depth_fg": "#a00000",
+    "depth_bg": "#d2ebf5",
+    "polarity": "alternate",
+    "cord": false,
+    "wireframe": false,
+    "background": "#fdd9b5",
+    "tile": "ornam.jpg",
+    "tile_crop": false,
+    "proc_size": 128
+  },
+  "looks": {}
+}

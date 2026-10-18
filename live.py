@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import threading
 import time
 
 # Must be set before cv2 loads: with hardware transforms on, MSMF takes ~13 s
@@ -45,189 +44,18 @@ os.environ.setdefault("OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS", "0")
 
 import cv2
 import numpy as np
-from PIL import Image
 
 from config import BACKGROUND_COLOR, ORNAMENT_FILENAME
-from ornament_engine import POLARITIES, OrnamentEngine, load_tile
-from stable_posterize import PALETTE_STYLES, PaletteTracker
+from core.engine import POLARITIES, OrnamentEngine, load_tile
+from core.filters import (BG_PRESETS, FG_PRESETS, apply_blur, apply_filters, apply_sharpen,
+                          centre_square, depth_labels)
+from core.posterize import PALETTE_STYLES, PaletteTracker
+from core.sources import CameraSource, open_source
 
 
 # ---------------------------------------------------------------------------
-# Depth-mode colour presets (BGR)
+# Window helpers
 # ---------------------------------------------------------------------------
-
-FG_PRESETS = [
-    (0,   0,   160),   # dark red
-    (120, 30,  0),     # dark navy
-    (0,   100, 10),    # dark green
-    (30,  0,   130),   # dark maroon
-    (20,  20,  20),    # near-black
-]
-
-BG_PRESETS = [
-    (245, 235, 210),   # warm cream
-    (255, 245, 220),   # light gold
-    (255, 255, 255),   # white
-    (220, 235, 245),   # cool white
-]
-
-
-# ---------------------------------------------------------------------------
-# Image calibration filters
-# ---------------------------------------------------------------------------
-
-def apply_blur(image: np.ndarray, blur_size: int) -> np.ndarray:
-    """Gaussian blur. blur_size=0 means no blur; each step adds 2px to the kernel."""
-    if blur_size <= 0:
-        return image
-    k = blur_size * 2 + 1
-    return cv2.GaussianBlur(image, (k, k), 0)
-
-
-def apply_sharpen(image: np.ndarray, amount: float) -> np.ndarray:
-    """Unsharp-mask sharpening. amount=0 means no sharpening."""
-    if amount <= 0:
-        return image
-    blurred = cv2.GaussianBlur(image, (0, 0), 3)
-    return cv2.addWeighted(image, 1.0 + amount, blurred, -amount, 0)
-
-
-def apply_filters(image: np.ndarray, brightness: int, contrast: float, saturation: float) -> np.ndarray:
-    """Apply brightness, contrast, and saturation adjustments."""
-    result = cv2.convertScaleAbs(image, alpha=contrast, beta=brightness)
-    if saturation != 1.0:
-        hsv = cv2.cvtColor(result, cv2.COLOR_BGR2HSV).astype(np.float32)
-        hsv[:, :, 1] = np.clip(hsv[:, :, 1] * saturation, 0, 255)
-        result = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Frame sources (all return BGR frames)
-# ---------------------------------------------------------------------------
-
-class CameraSource:
-    """Webcam read on a background thread, so capture never blocks processing."""
-
-    def __init__(self, index: int) -> None:
-        print(f"Opening camera {index} ...", flush=True)
-        self._cap = cv2.VideoCapture(index)
-        if not self._cap.isOpened() and os.name == "nt":
-            self._cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
-        self.is_opened = self._cap.isOpened()
-        self._frame = None
-        self._lock = threading.Lock()
-        self._running = self.is_opened
-        if self.is_opened:
-            threading.Thread(target=self._loop, daemon=True).start()
-
-    def _loop(self) -> None:
-        while self._running:
-            ok, frame = self._cap.read()
-            if ok:
-                with self._lock:
-                    self._frame = frame
-            else:
-                time.sleep(0.05)
-
-    def read(self, timeout: float = 5.0) -> tuple[bool, np.ndarray | None]:
-        deadline = time.perf_counter() + timeout
-        while self._running and self._frame is None and time.perf_counter() < deadline:
-            time.sleep(0.005)
-        if self._frame is None:
-            print("Error: camera opened but delivers no frames "
-                  "(in use by another app, unplugged, or disabled)")
-        with self._lock:
-            return self._frame is not None, self._frame
-
-    def release(self) -> None:
-        self._running = False
-        self._cap.release()
-
-
-class VideoSource:
-    """Video file read frame by frame, looping at the end."""
-
-    def __init__(self, path: str) -> None:
-        self._cap = cv2.VideoCapture(path)
-        self.is_opened = self._cap.isOpened()
-
-    def read(self) -> tuple[bool, np.ndarray | None]:
-        ok, frame = self._cap.read()
-        if not ok:
-            self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            ok, frame = self._cap.read()
-        return ok, frame
-
-    def release(self) -> None:
-        self._cap.release()
-
-
-class GifSource:
-    """Animated GIF, looping."""
-
-    def __init__(self, path: str) -> None:
-        self._gif = Image.open(path)
-        self._n = self._gif.n_frames
-        self._idx = 0
-        self.is_opened = True
-
-    def read(self) -> tuple[bool, np.ndarray]:
-        self._gif.seek(self._idx % self._n)
-        self._idx += 1
-        return True, cv2.cvtColor(np.array(self._gif.convert("RGB")), cv2.COLOR_RGB2BGR)
-
-    def release(self) -> None:
-        self._gif.close()
-
-
-class ImageSource:
-    """Still image with simulated sensor noise and 1-px jitter, like a webcam."""
-
-    def __init__(self, path: str, noise: float = 4.0) -> None:
-        self._img = cv2.imread(path)
-        self.is_opened = self._img is not None
-        self._noise = noise
-        self._rng = np.random.default_rng()
-
-    def read(self) -> tuple[bool, np.ndarray]:
-        dx, dy = self._rng.integers(-1, 2, size=2)
-        img = np.roll(self._img, (dy, dx), axis=(0, 1)).astype(np.float32)
-        img += self._rng.normal(0, self._noise, img.shape)
-        return True, np.clip(img, 0, 255).astype(np.uint8)
-
-    def release(self) -> None:
-        pass
-
-
-def open_source(arg: str | None):
-    if arg is None or arg.isdigit():
-        return CameraSource(int(arg or 0))
-    ext = os.path.splitext(arg)[1].lower()
-    if ext == ".gif":
-        return GifSource(arg)
-    if ext in (".jpg", ".jpeg", ".png", ".bmp", ".webp"):
-        return ImageSource(arg)
-    return VideoSource(arg)
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def centre_square(frame: np.ndarray) -> np.ndarray:
-    h, w = frame.shape[:2]
-    s = min(h, w)
-    y0, x0 = (h - s) // 2, (w - s) // 2
-    return frame[y0 : y0 + s, x0 : x0 + s]
-
-
-def depth_labels(gray: np.ndarray, lo: int, hi: int, size: int) -> np.ndarray:
-    """Band mask at full resolution, area-downsampled, then majority-thresholded."""
-    band = ((gray >= lo) & (gray <= hi)).astype(np.float32)
-    small = cv2.resize(band, (size, size), interpolation=cv2.INTER_AREA)
-    return (small > 0.5).astype(np.int64)
-
 
 WINDOW = "Oimo-chiyme v2"
 F11_KEYS = (0x7A0000, 65480)   # cv2.waitKeyEx codes: Windows, GTK
