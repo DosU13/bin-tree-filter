@@ -83,6 +83,10 @@ PARAMS: tuple[Param, ...] = (
           help="Keep a triangle's colour unless another beats it by this share"),
     Param("conforming", "Conforming mesh", "Tree", "bool", True, keys=("v",),
           help="Neighbouring triangles differ by at most one level (no T-junctions)"),
+    Param("seamless", "Seamless colours", "Tree", "bool", False, keys=("j",),
+          help="Different colours meet only along ornament edges without ink: a triangle whose inked "
+               "edge touches another colour splits (down to Max depth), and the smallest ones share "
+               "a colour. Best with polarity alternate and few colours"),
     Param("animate", "Animate", "Tree", "bool", True, keys=("i",),
           help="Cross-fade splits and colours instead of switching instantly"),
     Param("split_time", "Split time (s)", "Tree", "float", 0.15, 0.0, 2.0, 0.05,
