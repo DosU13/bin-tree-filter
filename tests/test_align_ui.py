@@ -267,3 +267,43 @@ def test_unknown_camera_size_is_learned_from_frames(app, win):
     # Detection is not an undo step: one undo removes the camera again
     win.doc.undo.undo()
     assert cid not in [c.id for c in win.doc.scene.cameras]
+
+
+PEOPLE = os.path.join(ROOT, "scenes", "people.json")
+
+
+def _wait(app, cond, seconds=8.0):
+    deadline = time.time() + seconds
+    while time.time() < deadline and not cond():
+        pump(app, 0.05)
+    return cond()
+
+
+def test_people_view_learn_and_idle_toggle(app, win):
+    assert win.open_path(PEOPLE)
+    win.actions["view_presence"].setChecked(True)
+    assert win.session.preview_mode == "presence"
+    assert _wait(app, lambda: win.session.last is not None and win.session.last.activity is not None)
+    assert win.session.preview_image is not None
+    assert "people" in win.status_panel.perf.text() or "learning" in win.status_panel.perf.text()
+    win.actions["learn_background"].trigger()
+    assert _wait(app, lambda: win.session.last.learning, 3.0)
+    assert win.session.runner.idle is False                     # the editor runs no idle look by default
+    win.actions["idle_preview"].setChecked(True)
+    assert win.session.runner.idle is True
+    win.actions["view_ornament"].setChecked(True)
+
+
+def test_idle_look_combo_and_looks_skip_show_settings(app, win):
+    win.doc.set_param("presence_threshold", 50)
+    win.doc.save_look("calm2")
+    assert "presence_threshold" not in win.doc.scene.looks["calm2"]
+    combo = win.look_panel.widgets["idle_look"]
+    i = combo.findData("calm2")
+    assert i > 0
+    combo.setCurrentIndex(i)
+    assert win.doc.scene.params["idle_look"] == "calm2"
+    win.doc.set_param("presence_threshold", 30)
+    win.doc.apply_look("calm2")
+    assert win.doc.scene.params["presence_threshold"] == 30     # show setting kept
+    assert win.doc.scene.params["idle_look"] == "calm2"

@@ -2,6 +2,7 @@
 
 Rows that only apply to one mode (colour / depth) are shown only in that mode.
 Each label lists the option's hotkeys, which work while the canvas has focus.
+Show settings (not saved in looks) have italic labels.
 """
 
 from __future__ import annotations
@@ -82,9 +83,11 @@ class LookPanel(QScrollArea):
                 if p.group != group:
                     continue
                 w = self._make(p)
-                label = QLabel(p.label + (f"  <span style='color:#888'>({' / '.join(p.keys)})</span>" if p.keys else ""))
-                label.setToolTip(p.help)
-                w.setToolTip(p.help)
+                text = p.label if p.look else f"<i>{p.label}</i>"
+                label = QLabel(text + (f"  <span style='color:#888'>({' / '.join(p.keys)})</span>" if p.keys else ""))
+                tip = p.help if p.look else f"{p.help}\n\nShow setting: not saved in looks, never crossfaded."
+                label.setToolTip(tip)
+                w.setToolTip(tip)
                 form.addRow(label, w)
                 self.widgets[p.key] = w
                 self.rows[p.key] = (form, label)
@@ -92,7 +95,20 @@ class LookPanel(QScrollArea):
         lay.addStretch(1)
         self.setWidget(body)
         doc.paramsChanged.connect(self.refresh)
+        doc.looksChanged.connect(self.refresh)
         self.refresh()
+
+    def _fill_looks(self, w, value: str) -> None:
+        """A "look" combo lists the scene's looks (plus a missing one still referenced)."""
+        names = list(self.doc.scene.looks)
+        if value and value not in names:
+            names.append(value)
+        w.blockSignals(True)
+        w.clear()
+        w.addItem("(none)", "")
+        for n in names:
+            w.addItem(n if n in self.doc.scene.looks else f"{n} (missing)", n)
+        w.blockSignals(False)
 
     def _make(self, p: P.Param) -> QWidget:
         key = p.key
@@ -108,6 +124,9 @@ class LookPanel(QScrollArea):
         elif p.kind == "color":
             w = ColorButton(p.default)
             w.colorChanged.connect(lambda v, k=key: self.doc.set_param(k, v))
+        elif p.kind == "look":
+            w = combo(["(none)"], [""])
+            w.currentIndexChanged.connect(lambda _, k=key, w=w: self.doc.set_param(k, w.currentData()))
         else:
             w = TilePicker(lambda path, k=key: self.doc.set_param(k, path), self.doc.scene.resolve)
         return w
@@ -117,6 +136,8 @@ class LookPanel(QScrollArea):
         mode = values["mode"]
         for key, w in self.widgets.items():
             v = values[key]
+            if P.BY_KEY[key].kind == "look":
+                self._fill_looks(w, v)
             if isinstance(w, SliderSpin):
                 w.setValue(v)
             elif isinstance(w, TilePicker):

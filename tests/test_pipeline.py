@@ -145,3 +145,64 @@ def test_blend_ramp_is_purely_across_the_overlap(scene):
     mid = blend_alpha(np.stack([xs, np.full_like(xs, 0.5)], axis=1), spec)
     assert np.allclose(top, mid, atol=2e-3)
     assert top[0] > 0.95 and top[-1] < 0.1
+
+
+# ---------------------------------------------------------------------------
+# Presence, waves, idle look (scenes/people.json: two walkers, then nobody)
+# ---------------------------------------------------------------------------
+
+PEOPLE = os.path.join(ROOT, "scenes", "people.json")
+
+
+def test_people_scene_finds_walkers_sends_waves_and_goes_idle():
+    scene = Scene.load(PEOPLE)
+    pipe = Pipeline(scene, realtime=False)
+    try:
+        most, rings, idle_peak = 0, 0, 0.0
+        for i in range(int(17.5 * 15)):
+            r = pipe.step(1 / 15)
+            if i == 20:                                  # 1.4 s: background learned, nobody yet
+                assert not r.learning and r.people_count == 0 and r.activity.max() == 0
+            most = max(most, r.people_count)
+            if r.snapshot.waves is not None:
+                rings = max(rings, len(r.snapshot.waves))
+            idle_peak = max(idle_peak, r.idle)
+            if i == 6 * 15:                              # 6 s: walkers on, show look in force
+                assert r.idle == 0.0 and pipe.effective["presence"]
+        assert most == 2 and rings >= 2
+        assert idle_peak == 1.0 and r.idle == 1.0        # nobody since 10.5 s, idle after 4 s
+        assert pipe.effective["max_depth"] == scene.looks["idle"]["max_depth"]
+        assert not pipe.effective["presence"]
+        assert pipe.effective["presence_threshold"] == pipe.params["presence_threshold"]   # show setting
+    finally:
+        pipe.close()
+
+
+def test_presence_off_costs_nothing(scene):
+    pipe = Pipeline(scene, realtime=False)
+    try:
+        r = pipe.step(1 / 15)
+        assert r.activity is None and r.people == [] and "presence" not in r.timings
+        assert r.snapshot.waves is None
+    finally:
+        pipe.close()
+
+
+def test_idle_needs_permission_and_relearn_on_request():
+    scene = Scene.load(PEOPLE)
+    pipe = Pipeline(scene, realtime=False)
+    pipe.idle_enabled = False
+    try:
+        for _ in range(int(17.5 * 15)):
+            r = pipe.step(1 / 15)
+        assert r.idle == 0.0 and pipe.effective["presence"]
+        pipe.relearn_background()
+        assert pipe.step(1 / 15).learning
+        moved = pipe.scene.copy()
+        moved.cameras[0].transform.x += 10
+        for _ in range(10):
+            pipe.step(1 / 15)
+        pipe.set_scene(moved)                            # the stage picture changes: relearn
+        assert pipe.step(1 / 15).learning
+    finally:
+        pipe.close()

@@ -195,7 +195,7 @@ class SceneDocument(QObject):
 
     def save_look(self, name: str) -> None:
         looks = dict(self.scene.looks)
-        looks[name] = dict(self.scene.params)
+        looks[name] = P.look_values(self.scene.params)        # show settings stay out of looks
         self.undo.push(LooksCommand(self, self.scene.looks, looks, f"Save look {name}"))
 
     def delete_look(self, name: str) -> None:
@@ -210,7 +210,7 @@ class SceneDocument(QObject):
 
     def apply_look(self, name: str) -> None:
         if name in self.scene.looks:
-            self.set_params(self.scene.looks[name], f"Apply look {name}")
+            self.set_params(P.look_target(self.scene.params, self.scene.looks[name]), f"Apply look {name}")
 
     # -- files ---------------------------------------------------------------
 

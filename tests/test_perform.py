@@ -153,3 +153,33 @@ def test_missing_display_waits(app, tmp_path):
     pump(app, 0.3)
     assert all(w.state == "missing" and not w.isVisible() for w in outs.windows.values())
     outs.close()
+
+
+def test_idle_look_takes_over_an_empty_stage(app, tmp_path, caplog):
+    import logging
+    import perform
+    caplog.set_level(logging.INFO, logger="perform")
+    from core.scene import Scene
+    scene = Scene.load(os.path.join(ROOT, "scenes", "people.json"))
+    cam = scene.cameras[0]
+    cam.source.kind, cam.source.path = "image", os.path.join(ROOT, "scenes", "media", "panorama.jpg")
+    scene.params.update(idle_after=0.5, idle_fade=0.3)
+    path = str(tmp_path / "still.json")
+    scene.save(path)
+    s = perform.Show(perform.parse_args([path, "--windowed", "--log-dir", str(tmp_path / "logs")]))
+    try:
+        deadline = time.time() + 8
+        while time.time() < deadline and not (s.session.last is not None and s.session.last.idle >= 1.0):
+            pump(app, 0.1)
+        assert s.session.last.idle >= 1.0                       # nobody ever: idle look in force
+        assert s.outputs.render_params["max_depth"] == scene.looks["idle"]["max_depth"]
+        assert "people 0" in " ".join(s.status_lines()) and "idle 100%" in " ".join(s.status_lines())
+        s.on_key(key("L"))
+        deadline = time.time() + 3
+        while time.time() < deadline and not s.session.last.learning:
+            pump(app, 0.05)
+        assert s.session.last.learning
+    finally:
+        s.quit()
+        pump(app, 0.3)
+    assert "idle look on" in caplog.text and "learning the empty stage" in caplog.text

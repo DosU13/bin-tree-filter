@@ -10,16 +10,22 @@ pass the context Qt made current, tests and tools use OffscreenGL.
 Pipeline per frame:
     upload(snapshot)            node colours / split amounts -> textures
     render(fbo, view)           key pass (only for cord / wireframe), then main pass
+
+Wave rings (snapshot.waves, view.waves) split every triangle under a ring's crest
+a few more levels, so the mosaic subdivides as a ring passes, and tint its ink
+towards a glow colour.
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 import moderngl
 import numpy as np
 
 from core.engine import TreeSnapshot
+from core.presence import MAX_WAVES
 from core.view import BlendSpec, RenderView  # noqa: F401  (re-exported)
 
 NODE_TEX_W = 2048
@@ -48,6 +54,18 @@ uniform sampler2D u_nodes; // b, g, r, amount
 uniform isampler2D u_dom;  // dominant palette index per node
 uniform bool u_has_state;
 uniform int u_edge_mode;   // 0 none, 1 cord, 2 wireframe
+uniform int u_nw;                   // wave rings
+uniform vec4 u_waves[MAX_WAVES];    // x, y (cells), age (s), strength
+uniform float u_wave_speed;         // cells / s
+uniform float u_wave_width;         // cells
+uniform float u_wave_range;         // cells
+uniform float u_wave_depth;         // extra levels opened at a ring's crest
+
+const float WAVE_MIN_PX = 12.0;   // rings never split triangles smaller than this (legs, px)
+
+float g_wave = 0.0;        // ring strength at the pixel being drawn (set by set_wave)
+float g_wave_cap = 0.0;    // deepest level a ring may open there (set by set_wave)
+int g_base = 0;            // the tree's own deepest open level there (set by open_level)
 
 struct Tri { vec2 ra; vec2 ha; vec2 hb; int idx; };
 
@@ -66,6 +84,33 @@ int level_offset(int level) {
 
 vec4 node_at(int i) {
     return texelFetch(u_nodes, ivec2(i % u_tex_w, i / u_tex_w), 0);
+}
+
+// Strongest ring crest at p (0..1): rings grow at u_wave_speed and fade out towards u_wave_range
+float wave_at(vec2 p) {
+    float w = 0.0;
+    for (int i = 0; i < u_nw; i++) {
+        vec4 r = u_waves[i];
+        float radius = r.z * u_wave_speed;
+        float x = (length(p - r.xy) - radius) / max(u_wave_width, 1e-4);
+        float life = 1.0 - smoothstep(0.5 * u_wave_range, u_wave_range, radius);
+        w = max(w, r.w * life * exp(-x * x) * step(0.0, r.z));
+    }
+    return w;
+}
+
+void set_wave(vec2 p, float cells_per_px) {
+    g_wave = u_nw > 0 ? wave_at(p) : 0.0;
+    // A level-L triangle's legs are 2^(-L/2) cells long
+    g_wave_cap = 2.0 * log2(1.0 / max(WAVE_MIN_PX * cells_per_px, 1e-9));
+}
+
+// How far node idx of `level` is split open: the tree's amount, or under a ring up
+// to u_wave_depth levels deeper than the tree's own deepest open level
+float amount_at(int level, int idx) {
+    float a = node_at(level_offset(level) + idx).a;
+    float extra = min(g_wave * u_wave_depth, max(g_wave_cap - float(g_base), 0.0));
+    return max(a, clamp(extra - float(level - g_base), 0.0, 1.0));
 }
 
 // Level-0 triangle containing p; local = p relative to its cell
@@ -101,6 +146,11 @@ int open_level(inout Tri t, vec2 local) {
         down(t, local);
         level++;
     }
+    g_base = level;
+    while (level < u_lm && amount_at(level, t.idx) >= 1.0) {
+        down(t, local);
+        level++;
+    }
     return level;
 }
 
@@ -108,11 +158,12 @@ int open_level(inout Tri t, vec2 local) {
 int key_at(vec2 pix) {
     vec2 p = to_cell(pix);
     if (!inside(p) || !u_has_state) return -1;
+    set_wave(p, max(length(to_cell(pix + vec2(1.0, 0.0)) - p), length(to_cell(pix + vec2(0.0, 1.0)) - p)));
     vec2 local;
     Tri t = root_of(p, local);
     int level = open_level(t, local);
     int vis = level_offset(level) + t.idx;
-    if (node_at(vis).a >= 0.5 && level < u_lm) {
+    if (amount_at(level, t.idx) >= 0.5 && level < u_lm) {
         down(t, local);
         vis = level_offset(level + 1) + t.idx;
     }
@@ -151,6 +202,8 @@ uniform float u_gamma;
 uniform float u_gain;
 uniform bool u_flat;       // test pattern: flat colour instead of the ornament (blend still applies)
 uniform vec3 u_flat_color;
+uniform float u_wave_glow;
+uniform vec3 u_wave_color; // BGR 0..255
 out vec4 frag;
 
 float tile_coverage(vec2 uv, int level, float lod) {
@@ -223,19 +276,21 @@ void main() {
     } else {
         float cells_per_px = max(length(to_cell(pix + vec2(1.0, 0.0)) - p),
                                  length(to_cell(pix + vec2(0.0, 1.0)) - p));
+        set_wave(p, cells_per_px);
         vec2 local;
         Tri t = root_of(p, local);
         int level = open_level(t, local);
         vec4 na = node_at(level_offset(level) + t.idx);
         float cov_a = coverage(pix, level, cells_per_px);
-        col = u_bg + cov_a * (na.rgb - u_bg);
-        float amt = na.a;
+        float tint = u_wave_glow * smoothstep(0.3, 0.6, g_wave);    // crisp-edged band
+        col = u_bg + cov_a * (mix(na.rgb, u_wave_color, tint) - u_bg);
+        float amt = amount_at(level, t.idx);
         if (amt > 0.0 && level < u_lm) {
             Tri tb = t;
             down(tb, local);
             vec4 nb = node_at(level_offset(level + 1) + tb.idx);
             float cov_b = coverage(pix, level + 1, cells_per_px);
-            vec3 col_b = u_bg + cov_b * (nb.rgb - u_bg);
+            vec3 col_b = u_bg + cov_b * (mix(nb.rgb, u_wave_color, tint) - u_bg);
             col = col * (1.0 - amt) + col_b * amt;
         }
 
@@ -269,6 +324,10 @@ void main() {
     frag = vec4(col.zyx / 255.0, 1.0);
 }
 """
+
+COMMON = COMMON.replace("MAX_WAVES", str(MAX_WAVES))
+KEY_FRAGMENT = KEY_FRAGMENT.replace("MAX_WAVES", str(MAX_WAVES))
+MAIN_FRAGMENT = MAIN_FRAGMENT.replace("MAX_WAVES", str(MAX_WAVES))
 
 IMAGE_FRAGMENT = """
 #version 330 core
@@ -399,7 +458,21 @@ class GLRenderer:
 
     # -- drawing -------------------------------------------------------------
 
-    def _set_common(self, prog: moderngl.Program, view: RenderView, edge_mode: int) -> None:
+    def _wave_rows(self, view: RenderView) -> tuple[int, bytes | None]:
+        """Rings to draw now: (count, u_waves data) with ages at the view's clock."""
+        snap = self._state
+        if view.waves is None or snap is None or snap.waves is None or not len(snap.waves):
+            return 0, None
+        now = view.clock if view.clock is not None else snap.clock + (time.perf_counter() - snap.wall)
+        w = np.asarray(snap.waves, dtype=np.float64)[-MAX_WAVES:]
+        rows = np.zeros((MAX_WAVES, 4), dtype=np.float32)
+        rows[:len(w), :2] = w[:, :2]
+        rows[:len(w), 2] = now - w[:, 2]
+        rows[:len(w), 3] = w[:, 3]
+        return len(w), rows.tobytes()
+
+    def _set_common(self, prog: moderngl.Program, view: RenderView, edge_mode: int,
+                    waves: tuple[int, bytes | None] = (0, None)) -> None:
         snap = self._state
         _set(prog, "u_m", data=_mat3_bytes(view.norm_to_cell))
         _set(prog, "u_size", (float(view.width), float(view.height)))
@@ -414,6 +487,15 @@ class GLRenderer:
         _set(prog, "u_edge_mode", edge_mode)
         _set(prog, "u_nodes", 0)
         _set(prog, "u_dom", 1)
+        nw, data = waves
+        _set(prog, "u_nw", nw)
+        if nw:
+            w = view.waves
+            _set(prog, "u_waves", data=data)
+            _set(prog, "u_wave_speed", float(w.speed))
+            _set(prog, "u_wave_width", float(w.width))
+            _set(prog, "u_wave_range", float(w.range))
+            _set(prog, "u_wave_depth", float(w.depth))
 
     def render(self, fbo: moderngl.Framebuffer, view: RenderView) -> None:
         """Draw the uploaded state into *fbo* (its viewport must be view.width x view.height)."""
@@ -428,11 +510,12 @@ class GLRenderer:
         edge_mode = 2 if view.wireframe else (1 if view.cord else 0)
         edge_w = view.cord_width
         margin = edge_w + 1
+        waves = self._wave_rows(view)
 
         if edge_mode:
             kfbo = self._key_target(view.width + 2 * margin, view.height + 2 * margin)
             kfbo.use()
-            self._set_common(self.keys, view, edge_mode)
+            self._set_common(self.keys, view, edge_mode, waves)
             _set(self.keys, "u_margin", margin)
             self._vao_keys.render(moderngl.TRIANGLE_STRIP)
             self._key_tex.use(3)
@@ -441,7 +524,7 @@ class GLRenderer:
 
         fbo.use()
         p = self.main
-        self._set_common(p, view, edge_mode)
+        self._set_common(p, view, edge_mode, waves)
         if self._tile is not None:
             self._tile.use(2)
             _set(p, "u_tile_size", tuple(float(s) for s in self._tile.size))
@@ -457,6 +540,9 @@ class GLRenderer:
         _set(p, "u_gain", float(view.gain))
         _set(p, "u_flat", view.flat is not None)
         _set(p, "u_flat_color", tuple(float(c) for c in (view.flat or (0, 0, 0))))
+        if view.waves is not None:
+            _set(p, "u_wave_glow", float(view.waves.glow))
+            _set(p, "u_wave_color", tuple(float(c) for c in view.waves.color))
         b = view.blend
         if b is not None and len(b.quads):
             quads = _ccw_quads(b.quads)[:MAX_QUADS]

@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 SCENE_FILTER = "Scenes (*.json);;All files (*)"
 VIEW_MODES = {"view_ornament": "ornament", "view_input": "input", "view_labels": "labels",
-              "view_cameras": "cameras"}
+              "view_cameras": "cameras", "view_presence": "presence"}
 MAX_RECENT = 8
 
 
@@ -36,7 +36,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings = QSettings()
         self.doc = SceneDocument(self)
-        self.session = LiveSession(self.doc.scene, self)
+        self.session = LiveSession(self.doc.scene, self, idle=False)      # idle look only on request
         self.canvas = CanvasScene(self.doc, self)
         self.view = CanvasView(self.canvas, lambda: self.session)
         self.setCentralWidget(self.view)
@@ -493,6 +493,13 @@ class MainWindow(QMainWindow):
 
     def run_pause(self, name: str, on: bool) -> None:
         self.session.set_paused(on)
+
+    def run_learn_background(self) -> None:
+        self.session.relearn_background()
+        self.statusBar().showMessage("Learning the empty stage…", 2000)
+
+    def run_idle(self, name: str, on: bool) -> None:
+        self.session.set_idle(on)
 
     def help_shortcuts(self) -> None:
         rows = []

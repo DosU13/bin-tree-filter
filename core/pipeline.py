@@ -1,11 +1,16 @@
 """Per-frame processing for a whole scene: cameras -> stitched stage -> labels -> tree.
 
-    Pipeline        does one frame per step(dt); owns sources, compositor, tracker, tree
+    Pipeline        does one frame per step(dt); owns sources, compositor, tracker, tree,
+                    presence (people, waves) and the idle look
     PipelineRunner  runs a Pipeline on a background thread; the UI / outputs read
                     latest() and send changes with set_scene() / set_params()
 
 The result of a step (FrameResult) carries a TreeSnapshot for the renderers plus
 small preview images and status for the UI.
+
+The settings in force are `Pipeline.effective`: the params sent in, faded towards
+the idle look while nobody is on stage (FrameResult.idle says how far; renderers
+mix their own style the same way with core.looks.idle_mix).
 """
 
 from __future__ import annotations
@@ -22,14 +27,21 @@ from core import params as P
 from core.compositor import Compositor
 from core.engine import OrnamentTree, TreeSnapshot
 from core.filters import apply_blur, apply_filters, apply_sharpen, hex_to_bgr
+from core.looks import IdleFader, idle_mix
 from core.posterize import PaletteTracker
+from core.presence import Person, PresenceTracker, WaveEmitter
 from core.scene import Scene
 from core.sources import open_scene_source
+from core.view import render_background
 
 log = logging.getLogger(__name__)
 
 # A camera whose newest frame is older than this no longer contributes
 HOLD_SECONDS = 5.0
+# Presence detection that was off longer than this relearns the empty stage first
+PRESENCE_STALE_SECONDS = 1.0
+# "Colours from people" needs at least this share of the stage moving
+PALETTE_MIN_PEOPLE = 0.005
 
 
 @dataclass
@@ -44,6 +56,19 @@ class FrameResult:
     leaves: int = 0
     thumbnails: dict[str, np.ndarray] = field(default_factory=dict)   # small BGR frame per camera
     frame_sizes: dict[str, tuple[int, int]] = field(default_factory=dict)   # real (w, h) per camera
+    activity: np.ndarray | None = None       # presence 0..1 at proc resolution (None: not running)
+    people: list[Person] = field(default_factory=list)
+    learning: bool = False                   # presence is (re)learning the empty stage
+    idle: float = 0.0                        # how far the idle look is faded in (0..1)
+
+    @property
+    def people_count(self) -> int:
+        return sum(1 for p in self.people if p.missing == 0)
+
+
+def needs_presence(values: dict, idle: bool = True) -> bool:
+    """Whether these settings use people detection at all (about 0.5 ms per cell a frame)."""
+    return bool(values["presence"] or values["waves"] or (idle and values["idle_look"]))
 
 
 def apply_params(values: dict, tree: OrnamentTree, tracker: PaletteTracker) -> None:
@@ -64,6 +89,9 @@ def apply_params(values: dict, tree: OrnamentTree, tracker: PaletteTracker) -> N
     tracker.style = values["palette_style"]
     tracker.tau = values["palette_tau"]
     tracker.label_margin = values["label_margin"]
+    tree.still_depth = values["still_depth"]
+    tree.still_dim = values["still_dim"]
+    tree.dim_color = render_background(values)
 
 
 def _source_key(cam) -> tuple:
@@ -83,7 +111,14 @@ class Pipeline:
         self.tracker = PaletteTracker(k=self.params["colors"])
         self.tree: OrnamentTree | None = None
         self.compositor: Compositor | None = None
+        self.presence = PresenceTracker()
+        self.waves = WaveEmitter()
+        self.idle = IdleFader()
+        self.idle_enabled = True
+        self.effective = self.params
+        self.clock = 0.0                 # pipeline time (s): sum of step dt
         self.version = 0
+        self._presence_off = 0.0
         self._last_time: dict[str, float] = {}
         self._last_id: dict[str, int] = {}
         self._rebuild_stage()
@@ -97,7 +132,11 @@ class Pipeline:
         self.tree = OrnamentTree(st.cols, st.rows, st.levels, proc)
         self.compositor = Compositor(st, proc)
         self.tracker.reset()
-        apply_params(self.params, self.tree, self.tracker)
+        self.presence.reset()
+        apply_params(self.effective, self.tree, self.tracker)
+
+    def _mix(self) -> dict:
+        return idle_mix(self.params, self.scene.looks, self.idle.value())
 
     def _sync_sources(self) -> None:
         wanted = {c.id: c for c in self.scene.cameras if c.enabled}
@@ -120,17 +159,25 @@ class Pipeline:
         new_params = P.normalise(self.scene.params)
         stage_changed = old.stage != self.scene.stage or new_params["proc_size"] != self.params["proc_size"]
         self.params = new_params
+        self.effective = self._mix()
         if stage_changed:
             self._rebuild_stage()
         else:
-            apply_params(self.params, self.tree, self.tracker)
+            apply_params(self.effective, self.tree, self.tracker)
             old_cams = {c.id: c for c in old.cameras}
+            moved = False
             for cam in self.scene.cameras:
                 o = old_cams.get(cam.id)
                 if o is None or o.transform != cam.transform or o.feather != cam.feather:
                     self.compositor.remove(cam.id)
+                    moved = True
+                elif o.enabled != cam.enabled or _source_key(o) != _source_key(cam) or o.color != cam.color:
+                    moved = True
             for cam_id in set(old_cams) - {c.id for c in self.scene.cameras}:
                 self.compositor.remove(cam_id)
+                moved = True
+            if moved:
+                self.presence.relearn()          # the stage picture changed, not people
         self._sync_sources()
 
     def set_params(self, values: dict) -> None:
@@ -138,15 +185,21 @@ class Pipeline:
         proc_changed = values["proc_size"] != self.params["proc_size"]
         self.params = values
         self.scene.params = dict(values)
+        self.effective = self._mix()
         if proc_changed:
             self._rebuild_stage()
         else:
-            apply_params(values, self.tree, self.tracker)
+            apply_params(self.effective, self.tree, self.tracker)
+
+    def relearn_background(self) -> None:
+        """Learn the empty stage again from the next frames (nobody should be on it)."""
+        self.presence.relearn()
 
     # -- per frame -----------------------------------------------------------
 
     def step(self, dt: float) -> FrameResult:
         t0 = time.perf_counter()
+        self.clock += dt
         timings = {}
         frames, status = {}, {}
         now = time.perf_counter()
@@ -165,25 +218,48 @@ class Pipeline:
                 frames[cam.id] = frame
         timings["capture"] = (time.perf_counter() - t0) * 1000
 
-        p = self.params
+        p = self.effective
         cams = self.scene.cameras
         t = time.perf_counter()
         if p["mode"] == "depth":
             band, covered = self.compositor.compose_band(cams, frames, p["depth_min"], p["depth_max"])
-            timings["stitch"] = (time.perf_counter() - t) * 1000
+            raw = np.repeat((band * 255).astype(np.uint8)[:, :, None], 3, axis=2)
+        else:
+            raw, covered = self.compositor.compose(cams, frames)
+        timings["stitch"] = (time.perf_counter() - t) * 1000
+
+        # People: motion against the learned empty stage (on the unfiltered picture,
+        # so look changes to the input filters never read as movement)
+        pres = None
+        if needs_presence(p, self.idle_enabled):
+            if self._presence_off > PRESENCE_STALE_SECONDS:
+                self.presence.relearn()
+            self._presence_off = 0.0
+            t = time.perf_counter()
+            pres = self.presence.update(raw, covered, dt, p["presence_threshold"], p["presence_absorb"],
+                                        p["presence_trail"], p["presence_min_size"], p["proc_size"])
+            timings["presence"] = (time.perf_counter() - t) * 1000
+        else:
+            self._presence_off += dt
+
+        if p["mode"] == "depth":
             labels = (band > 0.5).astype(np.int64)
             palette = np.array([hex_to_bgr(p["depth_bg"]), hex_to_bgr(p["depth_fg"])], np.float32)
-            stage_input = np.repeat((band * 255).astype(np.uint8)[:, :, None], 3, axis=2)
+            stage_input = raw
         else:
-            img, covered = self.compositor.compose(cams, frames)
-            timings["stitch"] = (time.perf_counter() - t) * 1000
             t = time.perf_counter()
-            img = apply_blur(img, p["blur"])
+            img = apply_blur(raw, p["blur"])
             img = apply_sharpen(img, p["sharpen"])
             stage_input = apply_filters(img, p["brightness"], p["contrast"], p["saturation"])
             timings["filter"] = (time.perf_counter() - t) * 1000
             t = time.perf_counter()
-            labels, palette = self.tracker.update(stage_input, dt, mask=covered)
+            fit = covered
+            if pres is not None and p["presence"] and p["presence_palette"]:
+                # Colours from the people, so clothes keep their colours (the rest is faded anyway)
+                people = covered & (pres.activity > 0.3)
+                if people.sum() >= PALETTE_MIN_PEOPLE * people.size:
+                    fit = people
+            labels, palette = self.tracker.update(stage_input, dt, mask=fit)
             # Uncovered pixels get an extra label drawn in the background colour (no ink)
             k = len(palette)
             labels = np.where(covered, labels, k)
@@ -191,17 +267,43 @@ class Pipeline:
             timings["posterize"] = (time.perf_counter() - t) * 1000
 
         t = time.perf_counter()
-        self.tree.update(labels, palette, dt)
+        if pres is not None and p["presence"]:
+            self.tree.update(labels, palette, dt, activity=pres.activity, outline=pres.mask)
+        else:
+            self.tree.update(labels, palette, dt)
         timings["tree"] = (time.perf_counter() - t) * 1000
+
+        waves = None
+        if pres is not None and p["waves"]:
+            waves = self.waves.update(pres.people, self.clock, p["wave_interval"], p["wave_origin"],
+                                      p["wave_range"] / p["wave_speed"])
+        else:
+            self.waves.clear()
+
+        # Idle look: fade in after nobody for a while, out when someone comes (or when switched off)
+        use_idle = self.idle_enabled and pres is not None and p["idle_look"] in self.scene.looks
+        occupied = not use_idle or bool(pres.people) or pres.learning
+        self.idle.update(occupied, dt, p["idle_after"], p["idle_fade"])
+        eff = self._mix()
+        if eff != self.effective:            # takes effect from the next frame
+            self.effective = eff
+            apply_params(eff, self.tree, self.tracker)
+
         self.version += 1
         snap = self.tree.snapshot()
         snap.version = self.version
+        snap.waves = waves
+        snap.clock = self.clock
+        snap.wall = time.perf_counter()
         labels_image = palette[np.minimum(labels, len(palette) - 1)].astype(np.uint8)
         timings["total"] = (time.perf_counter() - t0) * 1000
         thumbs = {cid: img for cid, img in self.compositor.last_small.items() if cid in frames}
         sizes = {cid: (f.shape[1], f.shape[0]) for cid, f in frames.items()}
         return FrameResult(snap, stage_input, labels_image, covered, timings, status,
-                           leaves=self.tree.leaf_count, thumbnails=thumbs, frame_sizes=sizes)
+                           leaves=self.tree.leaf_count, thumbnails=thumbs, frame_sizes=sizes,
+                           activity=None if pres is None else pres.activity,
+                           people=[] if pres is None else pres.people,
+                           learning=bool(pres is not None and pres.learning), idle=self.idle.value())
 
     def close(self) -> None:
         for src in self.sources.values():
@@ -216,9 +318,10 @@ class PipelineRunner:
     applied between frames, so the caller never blocks on processing.
     """
 
-    def __init__(self, scene: Scene, max_fps: float = 60.0, realtime: bool = True) -> None:
+    def __init__(self, scene: Scene, max_fps: float = 60.0, realtime: bool = True, idle: bool = True) -> None:
         self.max_fps = max_fps
         self.realtime = realtime
+        self.idle = idle
         self._scene = scene
         self._latest: FrameResult | None = None
         self._lock = threading.Lock()
@@ -246,9 +349,19 @@ class PipelineRunner:
     def set_params(self, values: dict) -> None:
         self._commands.put(("params", dict(values)))
 
+    def relearn_background(self) -> None:
+        """Learn the empty stage again (nobody should be on it for the next half second)."""
+        self._commands.put(("relearn", None))
+
+    def set_idle(self, on: bool) -> None:
+        """Allow the idle look (perform.py: on; the editor: only when asked)."""
+        self.idle = bool(on)
+        self._commands.put(("idle", bool(on)))
+
     def _apply_commands(self, pipe: Pipeline) -> None:
         # Coalesce: only the newest scene / params matter
         scene = params = None
+        relearn = False
         while True:
             try:
                 kind, value = self._commands.get_nowait()
@@ -256,16 +369,23 @@ class PipelineRunner:
                 break
             if kind == "scene":
                 scene, params = value, None
-            else:
+            elif kind == "params":
                 params = value
+            elif kind == "relearn":
+                relearn = True
+            elif kind == "idle":
+                pipe.idle_enabled = value
         if scene is not None:
             pipe.set_scene(scene)
         if params is not None:
             pipe.set_params(params)
+        if relearn:
+            pipe.relearn_background()
 
     def _run(self) -> None:
         try:
             pipe = Pipeline(self._scene, realtime=self.realtime)
+            pipe.idle_enabled = self.idle
             self.pipeline = pipe
         except Exception:
             log.exception("pipeline failed to start")
