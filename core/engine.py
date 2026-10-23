@@ -111,6 +111,23 @@ def inverted(polarity: str, level: int) -> bool:
     return polarity == "invert"
 
 
+def tile_edge_ink(tile: np.ndarray, band: float = 0.03) -> tuple[bool, bool] | None:
+    """Which edges of the (not inverted) tile triangle carry ink: (hypotenuse, legs).
+
+    The renderers draw the tile's upper-right half: right angle top-right,
+    hypotenuse the top-left to bottom-right diagonal.  None when both or neither
+    carry ink (then no edge is clearer than another).
+    """
+    h, w = tile.shape
+    n = 256
+    u, v = np.meshgrid((np.arange(n) + 0.5) / n, (np.arange(n) + 0.5) / n)
+    inside = u + v < 1
+    ink = tile[(v * (h - 1)).round().astype(int), ((1 - u) * (w - 1)).round().astype(int)]
+    hyp = float(ink[inside & (u + v > 1 - band)].mean()) > 0.5
+    legs = float(ink[inside & ((u < band) | (v < band))].mean()) > 0.5
+    return None if hyp == legs else (hyp, legs)
+
+
 # ---------------------------------------------------------------------------
 # Geometry
 # ---------------------------------------------------------------------------
@@ -228,6 +245,46 @@ def _base_neighbours(levels: int, cols: int = 1, rows: int = 1) -> list[np.ndarr
     return result
 
 
+def _finest_edge_pairs(levels: int, cols: int = 1, rows: int = 1):
+    """Every pair of finest-level triangles sharing an edge, both ways round.
+
+    Returns (f, g, diagonal, sep), sorted by sep: triangle indices, whether the
+    shared edge is diagonal (else axis-aligned), and the coarsest level at which
+    f and g lie in different nodes (so the edge is on the border of f's
+    level-L ancestor for every L >= sep).
+    """
+    ra, ha, hb = root_triangles(cols, rows)
+    for _ in range(levels):
+        mid = (ha + hb) * 0.5
+        new_hb = np.empty((2 * len(ra), 2))
+        new_hb[0::2], new_hb[1::2] = ha, hb
+        ra, ha, hb = np.repeat(mid, 2, axis=0), np.repeat(ra, 2, axis=0), new_hb
+    n = len(ra)
+    # Dyadic vertices -> compact integer ids
+    verts = np.round(np.concatenate([ra, ha, hb]) * (1 << (levels // 2 + 2))).astype(np.int64)
+    _, vid = np.unique(verts[:, 0] * (1 << 32) + verts[:, 1], return_inverse=True)
+    vid = vid.reshape(3, n)
+    tri = np.tile(np.arange(n), 3)
+    a = np.concatenate([vid[1], vid[0], vid[0]])            # hyp (ha, hb), legs (ra, ha), (ra, hb)
+    b = np.concatenate([vid[2], vid[1], vid[2]])
+    lo, hi = np.minimum(a, b), np.maximum(a, b)
+    key = lo * (int(vid.max()) + 1) + hi
+    order = np.argsort(key, kind="stable")
+    k = key[order]
+    i = np.flatnonzero(k[1:] == k[:-1])                     # each inner edge appears twice
+    f, g = tri[order[i]], tri[order[i + 1]]
+    corner_a = np.concatenate([ha, ra, ra])[order[i]]
+    corner_b = np.concatenate([hb, ha, hb])[order[i]]
+    d = np.abs(corner_b - corner_a)
+    diagonal = (d[:, 0] > 1e-12) & (d[:, 1] > 1e-12)
+    x = f ^ g
+    sep = np.maximum(levels - np.floor(np.log2(x)).astype(np.int64), 0)
+    f, g = np.concatenate([f, g]), np.concatenate([g, f])
+    diagonal, sep = np.concatenate([diagonal, diagonal]), np.concatenate([sep, sep])
+    order = np.argsort(sep, kind="stable")
+    return f[order], g[order], diagonal[order], sep[order]
+
+
 def _blend(dt: float, tau: float) -> float:
     """Frame-rate independent EMA factor for time constant *tau* seconds."""
     return 1.0 if tau <= 0 else float(1.0 - np.exp(-dt / tau))
@@ -282,7 +339,12 @@ class OrnamentTree:
         # Presence (only when update() gets an activity map)
         self.still_depth = 2           # deepest split level where nothing moves
         self.still_dim = 0.7           # still areas fade this far towards dim_color
-        self.dim_color = (181, 217, 253)
+        self.dim_color = (181, 217, 253)   # also the render background (flat-coloured labels)
+
+        # Seamless colours: different colours may only meet along edges without ink
+        self.edge_ink: tuple[bool, bool] | None = None   # (hypotenuse, legs) inked; None = off
+        self.polarity = "alternate"
+        self._edge_pairs = None
 
         self.set_proc_size(proc_size)
         self.reset()
@@ -336,6 +398,96 @@ class OrnamentTree:
             inside = self._sum_levels(o)
             cut = (inside >= 0.5) & (self._node_px - inside >= 0.5)
         return mean, peak, cut
+
+    def _edge_inked(self, level, diagonal: np.ndarray) -> np.ndarray:
+        """Whether a triangle at *level* draws ink along its edge in that direction."""
+        even = level % 2 == 0
+        hyp = diagonal == even                     # level-0 hypotenuses are the cell diagonals
+        ink = np.where(hyp, self.edge_ink[0], self.edge_ink[1])
+        return ink ^ (even if self.polarity == "alternate" else self.polarity == "invert")
+
+    def _seam_setup(self, split: np.ndarray, palette_bgr: np.ndarray):
+        """Finest edge pairs, each finest cell's leaf level and node under *split*, flat labels."""
+        if self._edge_pairs is None:
+            self._edge_pairs = _finest_edge_pairs(self.max_level, self.cols, self.rows)
+        lm = self.max_level
+        cells = self._cells
+        lvl = np.zeros(self.n_cells, dtype=np.int64)
+        full = np.ones(self.n_cells, dtype=bool)
+        for level in range(min(lm, self.max_depth)):        # nothing splits below max_depth
+            full &= split[self.offsets[level] + (cells >> (lm - level))]
+            lvl += full
+        leaf = self.offsets[lvl] + (cells >> (lm - lvl))
+        # Labels drawn in the background colour have no visible ink
+        flat = np.abs(np.asarray(palette_bgr, np.float32)
+                      - np.asarray(self.dim_color, np.float32)).max(axis=1) < 8
+        return self._edge_pairs, lvl, leaf, flat
+
+    def _ink_conflicts(self, dom: np.ndarray, palette_bgr: np.ndarray) -> np.ndarray:
+        """Per node: as a leaf, would its inked edge touch a leaf of another colour?
+        Judged against last frame's leaves, on the finest edges along each node's border.
+        (Only this node's own ink counts, so a pair of triangles can't flip between
+        split and merged when their edge is inked on one side only.)"""
+        (f, g, diag, sep), lvl, leaf, flat = self._seam_setup(self.split, palette_bgr)
+        lm = self.max_level
+        cg = dom[leaf[g]]
+        out = np.zeros(self.n_nodes, dtype=bool)
+        top = min(self.max_depth, lm)
+        ends = np.searchsorted(sep, np.arange(top), side="right")
+        for level in range(top):
+            m = int(ends[level])                   # pairs on the borders of level-`level` nodes
+            if m == 0:
+                continue
+            node = self.offsets[level] + (f[:m] >> (lm - level))
+            c = dom[node]
+            hit = (c != cg[:m]) & ~flat[c] & ~flat[cg[:m]] & self._edge_inked(level, diag[:m])
+            out[node[hit]] = True
+        # A node can only split if its ancestors do
+        for level in range(top - 1, 0, -1):
+            out[self.level_slice(level - 1)] |= out[self.level_slice(level)].reshape(-1, 2).any(axis=1)
+        return out
+
+    def _unify_leaves(self, split: np.ndarray, dom: np.ndarray, hist: np.ndarray, palette_bgr: np.ndarray) -> None:
+        """Seamless colours for what splitting couldn't fix (depth limits, or triangles
+        that only split next frame): leaves joined by edges inked on both sides take one
+        colour, their combined majority.  The groups are small (a pair sharing an inked
+        hypotenuse, the four around a corner with inked legs, and what touches them)."""
+        (f, g, diag, _), lvl, leaf, flat = self._seam_setup(split, palette_bgr)
+        nf, ng = leaf[f], leaf[g]
+        df, dg = dom[nf], dom[ng]
+        m = ((nf < ng) & ~flat[df] & ~flat[dg]
+             & self._edge_inked(lvl[f], diag) & self._edge_inked(lvl[g], diag))
+        if not m.any():
+            return
+        # One edge per pair of leaves (a leaf border spans many finest edges)
+        e = np.unique(nf[m] * self.n_nodes + ng[m])
+        nodes, inv = np.unique(np.concatenate([e // self.n_nodes, e % self.n_nodes]), return_inverse=True)
+        ea, eb = inv[: len(e)], inv[len(e):]
+        # Connected components by label propagation (groups are small: pairs, fours)
+        comp = np.arange(len(nodes))
+        for _ in range(64):
+            low = np.minimum(comp[ea], comp[eb])
+            new = comp.copy()
+            np.minimum.at(new, ea, low)
+            np.minimum.at(new, eb, low)
+            new = new[new]
+            if np.array_equal(new, comp):
+                break
+            comp = new
+        _, comp = np.unique(comp, return_inverse=True)
+        n = comp.max() + 1
+        d = dom[nodes]
+        lo = np.full(n, np.iinfo(np.int64).max)
+        hi = np.full(n, -1)
+        np.minimum.at(lo, comp, d)
+        np.maximum.at(hi, comp, d)
+        mixed = (lo != hi)[comp]                   # only groups that disagree change
+        if not mixed.any():
+            return
+        totals = np.zeros((n, hist.shape[1]), dtype=np.float64)
+        np.add.at(totals, comp, hist[nodes])
+        totals[:, flat] = -1.0                     # never unify to "no ink"
+        dom[nodes[mixed]] = totals.argmax(axis=1)[comp[mixed]]
 
     def reset(self) -> None:
         self._hist = None
@@ -395,18 +547,23 @@ class OrnamentTree:
             current = hist[self._node_ar, self.dom]
             dom = np.where(current >= top * (1.0 - self.color_hysteresis), self.dom, best)
         self.dom = dom
+        if self.edge_ink is not None:
+            # Seamless colours: a triangle whose inked edge meets another colour splits,
+            # so the colour change moves onto edges without ink (or down to max_depth)
+            purity = np.where(self._ink_conflicts(dom, palette_bgr), 0.0, purity)
 
         # Split / merge with hysteresis
         merge_at = min(self.threshold + self.hysteresis, 1.0)
         split = np.where(purity < self.threshold, True,
                          np.where(purity >= merge_at, False, self.split))
         split[self._node_level < self.min_depth] = True
-        split[self._node_level >= min(self.max_depth, lm)] = False
+        capped = self._node_level >= min(self.max_depth, lm)
         if activity is not None:
             # Depth allowed per node grows with the most active pixel in it
             still = min(self.still_depth, self.max_depth)
             allowed = np.maximum(still + act_peak * (self.max_depth - still), self.min_depth)
-            split[self._node_level >= allowed] = False
+            capped |= self._node_level >= allowed
+        split[capped] = False
 
         # A node can only be split if its parent is
         for level in range(1, lm + 1):
@@ -426,6 +583,8 @@ class OrnamentTree:
                 if level > 0:
                     split[self.level_slice(level - 1)] |= forced.reshape(-1, 2).any(axis=1)
         self.split = split
+        if self.edge_ink is not None:
+            self._unify_leaves(split, dom, hist, palette_bgr)
 
         # Animate split amounts one level at a time: a child starts opening only
         # once its parent is fully open; a parent starts closing only once its

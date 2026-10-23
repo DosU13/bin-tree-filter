@@ -25,7 +25,7 @@ import numpy as np
 
 from core import params as P
 from core.compositor import Compositor
-from core.engine import OrnamentTree, TreeSnapshot
+from core.engine import OrnamentTree, TreeSnapshot, load_tile, tile_edge_ink
 from core.filters import apply_blur, apply_filters, apply_sharpen, hex_to_bgr
 from core.looks import IdleFader, idle_mix
 from core.posterize import PaletteTracker
@@ -79,6 +79,7 @@ def apply_params(values: dict, tree: OrnamentTree, tracker: PaletteTracker) -> N
     tree.hysteresis = values["hysteresis"]
     tree.color_hysteresis = values["color_hysteresis"]
     tree.conforming = values["conforming"]
+    tree.polarity = values["polarity"]
     tree.animate = values["animate"]
     tree.split_time = values["split_time"]
     tree.tau_hist = values["tau_hist"]
@@ -119,6 +120,8 @@ class Pipeline:
         self.clock = 0.0                 # pipeline time (s): sum of step dt
         self.version = 0
         self._presence_off = 0.0
+        self._ink_key = None
+        self._ink = None
         self._last_time: dict[str, float] = {}
         self._last_id: dict[str, int] = {}
         self._rebuild_stage()
@@ -195,6 +198,20 @@ class Pipeline:
         """Learn the empty stage again from the next frames (nobody should be on it)."""
         self.presence.relearn()
 
+    def _edge_ink(self, p: dict) -> tuple[bool, bool] | None:
+        """Which edges of the ornament tile carry ink (for seamless colours), cached per tile."""
+        key = (self.scene.resolve(p["tile"]), p["tile_crop"])
+        if key != self._ink_key:
+            self._ink_key = key
+            try:
+                self._ink = tile_edge_ink(load_tile(*key))
+            except Exception as exc:
+                log.warning("seamless colours: %s", exc)
+                self._ink = None
+            if self._ink is None:
+                log.info("seamless colours: the tile has ink on all its edges or none; nothing to do")
+        return self._ink
+
     # -- per frame -----------------------------------------------------------
 
     def step(self, dt: float) -> FrameResult:
@@ -267,6 +284,7 @@ class Pipeline:
             timings["posterize"] = (time.perf_counter() - t) * 1000
 
         t = time.perf_counter()
+        self.tree.edge_ink = self._edge_ink(p) if p["seamless"] else None
         if pres is not None and p["presence"]:
             self.tree.update(labels, palette, dt, activity=pres.activity, outline=pres.mask)
         else:
