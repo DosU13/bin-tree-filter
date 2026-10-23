@@ -155,3 +155,54 @@ def test_gpu_blend_matches_cpu(gl):
     pts = apply_matrix(view.norm_to_cell, norm_centres(192, 108))
     ref = blend_alpha(pts, view.blend).reshape(108, 192)
     assert np.abs(out - ref).max() < 2.5 / 255
+
+
+# ---------------------------------------------------------------------------
+# Wave rings
+# ---------------------------------------------------------------------------
+
+def _ring_view(clock, glow=0.0, depth=4):
+    from core.view import RenderView, WaveStyle
+    v = RenderView(256, 128, np.diag([2.0, 1.0, 1.0]), background=BG)
+    v.waves = WaveStyle(speed=0.5, width=0.06, range=2.0, depth=depth, glow=glow, color=(0, 0, 0))
+    v.clock = clock
+    return v
+
+
+def test_wave_ring_subdivides_and_moves(gl):
+    import copy
+    gl.set_tile(TILE)
+    plain = run_tree(2, 1, proc=32, levels=8, frames=1).snapshot()     # first frame: coarse tree
+    snap = copy.copy(plain)
+    snap.waves = np.array([[1.0, 0.5, 0.0, 1.0]])           # centre of the stage, born at t = 0
+
+    base = gl.render(plain, _ring_view(1.0))
+    at1 = gl.render(snap, _ring_view(1.0))                   # radius 0.5 cells
+    at2 = gl.render(snap, _ring_view(1.6))                   # radius 0.8 cells
+    changed1 = np.abs(at1.astype(int) - base).max(axis=2) > 0
+    changed2 = np.abs(at2.astype(int) - base).max(axis=2) > 0
+    ys, xs = np.nonzero(changed1)
+    r1 = np.hypot((xs + 0.5) / 128 - 1.0, (ys + 0.5) / 128 - 0.5)
+    ys, xs = np.nonzero(changed2)
+    r2 = np.hypot((xs + 0.5) / 128 - 1.0, (ys + 0.5) / 128 - 0.5)
+    assert changed1.mean() > 0.02 and changed2.mean() > 0.02
+    assert abs(np.median(r1) - 0.5) < 0.1 and abs(np.median(r2) - 0.8) < 0.1
+    # Nothing far from the ring changes
+    assert not changed1[:, :20].any()
+    # No waves in the view style: identical to no rings at all
+    from core.view import RenderView
+    off = gl.render(snap, RenderView(256, 128, np.diag([2.0, 1.0, 1.0]), background=BG))
+    assert np.array_equal(off, base)
+
+
+def test_wave_glow_tints_the_crest(gl):
+    gl.set_tile(TILE)
+    snap = run_tree(2, 1, proc=32, levels=8, frames=1).snapshot()
+    snap.waves = np.array([[1.0, 0.5, 0.0, 1.0]])
+    plain = gl.render(snap, _ring_view(1.0, glow=0.0, depth=0)).astype(int)
+    dark = gl.render(snap, _ring_view(1.0, glow=1.0, depth=0)).astype(int)
+    ys, xs = np.mgrid[0:128, 0:256]
+    r = np.hypot((xs + 0.5) / 128 - 1.0, (ys + 0.5) / 128 - 0.5)
+    crest, far = np.abs(r - 0.5) < 0.02, np.abs(r - 0.5) > 0.3
+    assert (plain - dark)[crest].mean() > 10                 # the ink at the crest turns black
+    assert np.array_equal(plain[far], dark[far])

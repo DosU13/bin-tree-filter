@@ -15,7 +15,7 @@ from PySide6.QtGui import QSurfaceFormat
 
 from align_perform.runtime import test_patterns
 from align_perform.runtime.qt_gl import RendererWindow
-from core.view import projector_view
+from core.view import projector_view, style_key
 
 BLACK = np.array([[[0, 0, 0, 255]]], np.uint8)
 TEST_GREY = (150, 150, 150)
@@ -48,9 +48,8 @@ class ProjectorWindow(RendererWindow):
     def _cached_view(self, proj, w: int, h: int):
         """projector_view is costly in Python (blend geometry); rebuild only when inputs change."""
         m = self.manager
-        p = m.params
-        key = (m.geometry_version, w, h, p["mode"], p["background"], p["depth_bg"], p["polarity"],
-               p["cord"], p["wireframe"])
+        p = m.render_params
+        key = (m.geometry_version, w, h, style_key(p))
         if key != self._view_key:
             self._view = projector_view(m.scene, proj, w, h, params=p)
             self._view_key = key

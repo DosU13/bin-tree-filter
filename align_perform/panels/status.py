@@ -26,6 +26,10 @@ class StatusPanel(QWidget):
         t = r.timings
         parts = [f"{'PAUSED' if paused else f'{r.fps:4.1f} fps'}", f"{t.get('total', 0):4.1f} ms",
                  f"leaves {r.leaves}"]
+        if r.activity is not None:
+            parts.append("learning empty stage…" if r.learning else f"people {r.people_count}")
+        if r.idle > 0:
+            parts.append(f"idle {r.idle:.0%}")
         detail = "  ".join(f"{k} {v:.1f}" for k, v in t.items() if k != "total")
         self.perf.setText("   ".join(parts))
         self.perf.setToolTip(detail + " (ms)")

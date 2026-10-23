@@ -49,6 +49,8 @@ ACTIONS: tuple[ActionDef, ...] = (
     ActionDef("view_labels", "&Labels", "Ctrl+3", "view_mode", True, False, "view"),
     ActionDef("view_cameras", "&Camera images", "Ctrl+4", "view_mode", True, False, "view",
               tip="Raw camera frames over the stage, for lining cameras up"),
+    ActionDef("view_presence", "&People", "Ctrl+5", "view_mode", True, False, "view",
+              tip="Who the cameras see moving: red = presence and trails, circles = people"),
     ActionDef("show_cameras", "Show cameras", "", "view_toggles", True, True),
     ActionDef("show_projectors", "Show projectors", "", "view_toggles", True, True),
     ActionDef("show_grid", "Show cell grid", "", "view_toggles", True, True),
@@ -67,6 +69,10 @@ ACTIONS: tuple[ActionDef, ...] = (
     ActionDef("blackout", "&Blackout", "Ctrl+B", "output_blackout", True, False),
     # Run
     ActionDef("pause", "&Pause processing", "F8", "run_pause", True, False, icon="SP_MediaPause"),
+    ActionDef("learn_background", "&Learn empty stage", "Ctrl+L", "run_learn_background", icon="SP_BrowserReload",
+              tip="Take the next half second of camera frames as the empty stage (step out of view first)"),
+    ActionDef("idle_preview", "Run &idle look", "", "run_idle", True, False,
+              tip="Let the idle look take over while nobody is on stage, as perform.py does"),
     # Help
     ActionDef("shortcuts", "&Keyboard shortcuts", "F1", "help_shortcuts"),
     ActionDef("about", "&About", "", "help_about"),
@@ -76,15 +82,15 @@ MENUS = (
     ("&File", ("new", "open", "recent", "-", "save", "save_as", "-", "export", "-", "quit")),
     ("&Edit", ("undo", "redo", "-", "duplicate", "delete", "-", "select_stage")),
     ("&Add", ("add_camera", "add_projector")),
-    ("&View", ("view_ornament", "view_input", "view_labels", "view_cameras", "-", "show_cameras",
+    ("&View", ("view_ornament", "view_input", "view_labels", "view_cameras", "view_presence", "-", "show_cameras",
                "show_projectors", "show_grid", "snap", "-", "fit", "zoom_in", "zoom_out", "-", "panels")),
     ("&Output", ("outputs", "test_pattern", "identify", "blackout")),
-    ("&Run", ("pause",)),
+    ("&Run", ("pause", "-", "learn_background", "idle_preview")),
     ("&Help", ("shortcuts", "about")),
 )
 
 TOOLBAR = ("new", "open", "save", "-", "undo", "redo", "-", "add_camera", "add_projector", "-",
-           "view_mode_combo", "fit", "snap", "-", "pause", "outputs", "test_pattern")
+           "view_mode_combo", "fit", "snap", "-", "pause", "learn_background", "outputs", "test_pattern")
 
 
 def build_actions(window) -> dict[str, QAction]:

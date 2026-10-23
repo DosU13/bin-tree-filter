@@ -15,13 +15,15 @@ from PySide6.QtCore import QObject, QRectF, QTimer, Signal
 from PySide6.QtGui import QImage
 
 from core.engine import load_tile
+from core.looks import idle_mix
 from core.pipeline import FrameResult, PipelineRunner
+from core.presence import draw_presence
 from core.scene import Scene
 from core.view import projector_view, stage_view, world_view
 
 log = logging.getLogger(__name__)
 
-PREVIEW_MODES = ("ornament", "input", "labels", "cameras")
+PREVIEW_MODES = ("ornament", "input", "labels", "presence", "cameras")
 
 
 def bgr_to_qimage(img: np.ndarray) -> QImage:
@@ -38,10 +40,11 @@ class LiveSession(QObject):
     previewReady = Signal()          # preview_image / preview_rect updated
     message = Signal(str)            # status-bar text (errors, tile problems)
 
-    def __init__(self, scene: Scene, parent: QObject | None = None, max_fps: float = 60.0) -> None:
+    def __init__(self, scene: Scene, parent: QObject | None = None, max_fps: float = 60.0,
+                 idle: bool = True) -> None:
         super().__init__(parent)
         self.scene = scene.copy()
-        self.runner = PipelineRunner(self.scene, max_fps=max_fps).start()
+        self.runner = PipelineRunner(self.scene, max_fps=max_fps, idle=idle).start()
         self.last: FrameResult | None = None
         self.preview_mode = "ornament"
         self.preview_image: QImage | None = None
@@ -73,6 +76,11 @@ class LiveSession(QObject):
     @property
     def params(self) -> dict:
         return self.scene.params
+
+    def render_params(self, r: FrameResult | None = None) -> dict:
+        """Params to draw frame *r* with: the idle look mixed in as far as the pipeline has."""
+        r = r or self.last
+        return idle_mix(self.scene.params, self.scene.looks, r.idle if r is not None else 0.0)
 
     def preview_params(self, values: dict) -> None:
         """Temporarily run with *values* (look crossfades) without touching the document."""
@@ -124,7 +132,8 @@ class LiveSession(QObject):
             # Never more pixels than the screen shows, never fewer than useful
             scale = min(1.0, 2400 / max(vw, vh))
             w, h = max(2, int(vw * scale)), max(2, int(vh * scale))
-            view = world_view(self.scene, vr.x(), vr.y(), vr.width(), vr.height(), w, h)
+            view = world_view(self.scene, vr.x(), vr.y(), vr.width(), vr.height(), w, h,
+                              params=self.render_params(r))
             view.outside = (40, 40, 40)
             img = self.gl.render(r.snapshot, view)
             self.preview_image = bgr_to_qimage(img)
@@ -134,6 +143,10 @@ class LiveSession(QObject):
             self.preview_rect = stage_rect
         elif self.preview_mode == "labels":
             self.preview_image = bgr_to_qimage(r.labels_image)
+            self.preview_rect = stage_rect
+        elif self.preview_mode == "presence":
+            img = draw_presence(r.stage_input, r.activity, r.people, self.params["proc_size"])
+            self.preview_image = bgr_to_qimage(img)
             self.preview_rect = stage_rect
         else:
             self.preview_image = None
@@ -148,6 +161,12 @@ class LiveSession(QObject):
         self.frameReady.emit(r)
 
     # -- misc ----------------------------------------------------------------
+
+    def relearn_background(self) -> None:
+        self.runner.relearn_background()
+
+    def set_idle(self, on: bool) -> None:
+        self.runner.set_idle(on)
 
     def runner_sources(self) -> list[tuple[str, object]]:
         """(camera id, source) pairs currently open in the pipeline thread."""
@@ -165,12 +184,13 @@ class LiveSession(QObject):
         """Current frame as one projector would show it (BGR), for snapshots."""
         if self.gl is None or self.last is None:
             return None
-        return self.gl.render(self.last.snapshot, projector_view(self.scene, projector, width, height))
+        return self.gl.render(self.last.snapshot, projector_view(self.scene, projector, width, height,
+                                                                 params=self.render_params()))
 
     def render_stage(self, width: int) -> np.ndarray | None:
         if self.gl is None or self.last is None:
             return None
-        return self.gl.render(self.last.snapshot, stage_view(self.scene, width))
+        return self.gl.render(self.last.snapshot, stage_view(self.scene, width, params=self.render_params()))
 
     def close(self) -> None:
         self._timer.stop()

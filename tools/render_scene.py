@@ -7,6 +7,7 @@ Writes, for the last frame:
     <projector id>.png     each projector's output (native resolution x --scale)
     stage_input.png        the cameras stitched at statistics resolution
     stage_labels.png       the posterized / depth-band labels
+    stage_presence.png     people found (when presence, waves or an idle look is on)
     stage.png              the ornament over the whole stage, one render
     projected.png          the projector outputs added together as light in
                            world space (edge blending included) - seams show here
@@ -25,6 +26,7 @@ import numpy as np
 from core import geometry as geo
 from core.engine import load_tile
 from core.pipeline import Pipeline
+from core.presence import draw_presence
 from core.scene import Scene
 from core.view import projector_view, stage_view
 
@@ -84,7 +86,9 @@ def main() -> None:
         result = pipe.step(1 / args.fps)
         for p in projs:
             w, h = sizes[p.id]
-            outputs[p.id] = gl.render(result.snapshot, projector_view(scene, p, w, h, params=pipe.params))
+            view = projector_view(scene, p, w, h, params=pipe.effective)
+            view.clock = result.snapshot.clock           # simulated time, not the wall clock
+            outputs[p.id] = gl.render(result.snapshot, view)
             if p.id in writers:
                 writers[p.id].write(outputs[p.id])
     elapsed = time.perf_counter() - t0
@@ -95,15 +99,19 @@ def main() -> None:
         cv2.imwrite(os.path.join(args.out, f"{pid}.png"), img)
     cv2.imwrite(os.path.join(args.out, "stage_input.png"), result.stage_input)
     cv2.imwrite(os.path.join(args.out, "stage_labels.png"), result.labels_image)
+    if result.activity is not None:
+        cv2.imwrite(os.path.join(args.out, "stage_presence.png"),
+                    draw_presence(result.stage_input, result.activity, result.people, pipe.params["proc_size"]))
     stage_w = round(scene.stage.width * args.scale)
-    cv2.imwrite(os.path.join(args.out, "stage.png"),
-                gl.render(result.snapshot, stage_view(scene, stage_w, params=pipe.params)))
+    view = stage_view(scene, stage_w, params=pipe.effective)
+    view.clock = result.snapshot.clock
+    cv2.imwrite(os.path.join(args.out, "stage.png"), gl.render(result.snapshot, view))
     world_scale = min(1.0, stage_w / scene.stage.width)
     cv2.imwrite(os.path.join(args.out, "projected.png"), simulate_projection(scene, outputs, world_scale))
     pipe.close()
     gl.release()
     print(f"{args.frames} frames in {elapsed:.1f} s ({args.frames / elapsed:.1f} fps incl. readback); "
-          f"leaves {result.leaves}; last frame timings: "
+          f"leaves {result.leaves}; people {result.people_count}; idle {result.idle:.2f}; last frame timings: "
           + ", ".join(f"{k} {v:.1f} ms" for k, v in result.timings.items()))
     print(f"wrote {os.path.abspath(args.out)}")
 

@@ -16,6 +16,7 @@ import numpy as np
 
 from core.engine import OrnamentEngine, load_tile
 from core.posterize import PaletteTracker
+from core.presence import PresenceTracker
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -47,6 +48,17 @@ def main() -> None:
         tracker = PaletteTracker(k=4)
         small = cv2.resize(img, (proc, proc), interpolation=cv2.INTER_AREA)
         print(f"posterize proc={proc}: {timed(lambda: tracker.update(small, 1 / 30), 10):.1f} ms")
+
+    for proc in (128, 256):
+        pres = PresenceTracker()
+        frame = cv2.resize(img, (proc, proc), interpolation=cv2.INTER_AREA)
+        moved = frame.copy()
+        moved[proc // 4: proc // 2, proc // 3: proc // 2] = (30, 40, 220)     # someone in view
+        covered = np.ones(frame.shape[:2], bool)
+        for _ in range(10):
+            pres.update(frame, covered, 1 / 15, cell_px=proc)            # learn the empty stage
+        print(f"presence proc={proc} (per cell): "
+              f"{timed(lambda: pres.update(moved, covered, 1 / 30, cell_px=proc), 20):.2f} ms")
 
     tracker = PaletteTracker(k=4)
     labels, palette = tracker.update(cv2.resize(img, (128, 128), interpolation=cv2.INTER_AREA), 1 / 30)

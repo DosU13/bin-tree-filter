@@ -34,11 +34,26 @@ class BlendSpec:
 
 
 @dataclass
+class WaveStyle:
+    """How wave rings look (core.presence.WaveEmitter starts them; GPU renderer only)."""
+
+    speed: float = 0.6                 # cells / s
+    width: float = 0.12                # cells
+    range: float = 1.5                 # cells: a ring has faded out by here
+    depth: int = 3                     # triangles under a ring's crest split this many more times
+    glow: float = 0.6                  # the crest's ink tints this far towards color
+    color: tuple = (45, 35, 180)       # BGR 0..255
+
+
+@dataclass
 class RenderView:
     """Where and how to draw.
 
     norm_to_cell: 3x3 matrix from normalised output coords (u right, v down,
                   0..1 over the whole output) to stage cells.
+    waves / clock: wave rings come with the TreeSnapshot; they are drawn at
+                  pipeline time *clock*, or (None) at the snapshot's clock plus the
+                  wall time since it was taken, so rings move smoothly between frames.
     """
 
     width: int
@@ -54,6 +69,8 @@ class RenderView:
     blend: BlendSpec | None = None
     outside: tuple = (0, 0, 0)             # BGR outside the stage
     flat: tuple | None = None              # BGR: draw this flat colour instead (test pattern)
+    waves: WaveStyle | None = None         # None: don't draw wave rings
+    clock: float | None = None
 
     @property
     def px_per_cell(self) -> float:
@@ -75,9 +92,26 @@ def render_background(params: dict) -> tuple[int, int, int]:
     return hex_to_bgr(params["depth_bg"] if params.get("mode") == "depth" else params["background"])
 
 
+# Params that change how a frame is drawn (everything else only changes the tree)
+STYLE_KEYS = ("mode", "background", "depth_bg", "polarity", "cord", "wireframe", "waves", "wave_speed",
+              "wave_width", "wave_range", "wave_depth", "wave_glow", "wave_color")
+
+
+def style_key(params: dict) -> tuple:
+    """Changes whenever a view built from *params* would look different."""
+    return tuple(params.get(k) for k in STYLE_KEYS)
+
+
+def wave_style(params: dict) -> WaveStyle | None:
+    if not params.get("waves"):
+        return None
+    return WaveStyle(speed=params["wave_speed"], width=params["wave_width"], range=params["wave_range"],
+                     depth=params["wave_depth"], glow=params["wave_glow"], color=hex_to_bgr(params["wave_color"]))
+
+
 def _style(params: dict) -> dict:
     return dict(background=render_background(params), polarity=params["polarity"],
-                cord=bool(params["cord"]), wireframe=bool(params["wireframe"]))
+                cord=bool(params["cord"]), wireframe=bool(params["wireframe"]), waves=wave_style(params))
 
 
 def stage_view(scene, width: int, height: int | None = None, params: dict | None = None,

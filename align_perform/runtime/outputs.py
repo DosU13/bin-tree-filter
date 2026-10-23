@@ -18,6 +18,7 @@ from PySide6.QtGui import QGuiApplication
 
 from align_perform.runtime.projector_window import ProjectorWindow
 from align_perform.runtime.screens import find_screen
+from core.looks import idle_mix
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class ProjectorOutputs(QObject):
         self.corner_sel: dict[str, int | None] = {}
         self.geometry_version = 0
         self.snapshot = None
+        self.idle = 0.0                    # idle look amount of the newest frame
         self.closing = False
         self.allow_escape = True
         self._states: dict[str, str] = {}
@@ -97,8 +99,14 @@ class ProjectorOutputs(QObject):
     def preview_params(self, values: dict) -> None:
         self.params = dict(values)
 
+    @property
+    def render_params(self) -> dict:
+        """What the windows draw with: params, faded towards the idle look as far as the pipeline is."""
+        return idle_mix(self.params, self.scene.looks, self.idle)
+
     def push(self, result) -> None:
         self.snapshot = result.snapshot
+        self.idle = result.idle
 
     def _sync(self) -> None:
         wanted = {p.id: p for p in self.scene.projectors if p.enabled}
@@ -244,6 +252,7 @@ class ProjectorOutputs(QObject):
             latest = runner.latest()
             if latest is not None:
                 self.snapshot = latest.snapshot
+                self.idle = latest.idle
         for win in self.windows.values():
             if win.isVisible():
                 win.update()

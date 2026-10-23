@@ -11,6 +11,7 @@ Keys (on any projector window, or the --status window):
     1 - 9               crossfade to the scene's looks, in order (--fade seconds)
     0                   crossfade back to the scene's own settings
     B                   blackout (fades out / in)
+    L                   learn the empty stage (for presence / waves / idle look; step out of view first)
     F                   freeze the picture
     R                   reload the scene file
     H                   status overlay on the projectors
@@ -20,7 +21,8 @@ Keys (on any projector window, or the --status window):
 
 Runs unattended: cameras that fail are reopened, a stalled or crashed pipeline
 is restarted, missing displays are waited for (--wait-for-screens), errors are
-logged to logs/perform-YYYYMMDD.log and the display is kept awake.
+logged to logs/perform-YYYYMMDD.log and the display is kept awake.  If the scene
+has an idle look, it takes over while nobody is on stage.
 """
 
 from __future__ import annotations
@@ -171,7 +173,7 @@ class Show(QObject):
         if args.look:
             if args.look not in self.scene.looks:
                 raise SceneError(f"look {args.look!r} not in scene (has: {', '.join(self.scene.looks) or 'none'})")
-            self.params = dict(self.scene.looks[args.look])
+            self.params = P.look_target(self.params, self.scene.looks[args.look])
             self.look_name = args.look
         self.frozen = False
         self.fader: LookFader | None = None
@@ -182,6 +184,7 @@ class Show(QObject):
         self._last_new_frame = time.perf_counter()
         self._last_health = time.perf_counter()
         self.hud = False
+        self._idle_state = "off"           # off | fading | on (for the log)
 
         self.session = self._new_session()
         self.outputs = ProjectorOutputs(self.scene, self.session, key_handler=self.on_key, windowed=args.windowed,
@@ -231,6 +234,13 @@ class Show(QObject):
             self._last_new_frame = time.perf_counter()
         if self.hud:
             self.outputs.set_hud(self.status_lines(r))
+        state = "off" if r.idle <= 0 else ("on" if r.idle >= 1 else "fading")
+        if state != self._idle_state:
+            if state == "on" or (state == "fading" and self._idle_state == "off"):
+                log.info("idle look %s (nobody on stage)", "on" if state == "on" else "fading in")
+            elif state == "off":
+                log.info("idle look off (someone came)")
+            self._idle_state = state
 
     def apply_params(self, values: dict) -> None:
         self.params = P.normalise(values)
@@ -240,10 +250,15 @@ class Show(QObject):
     def status_lines(self, r=None) -> list[str]:
         r = r or self.session.last
         up = int(time.time() - self.started)
+        idle = f"  idle {r.idle:.0%}" if r is not None and r.idle > 0 else ""
         lines = [f"{time.strftime('%H:%M:%S')}  up {up // 3600}:{up // 60 % 60:02d}:{up % 60:02d}  "
-                 f"look {self.look_name}{'  FROZEN' if self.frozen else ''}{'  BLACKOUT' if self.outputs.blackout else ''}"]
+                 f"look {self.look_name}{idle}{'  FROZEN' if self.frozen else ''}"
+                 f"{'  BLACKOUT' if self.outputs.blackout else ''}"]
         if r is not None:
-            lines.append(f"{r.fps:.1f} fps  {r.timings.get('total', 0):.1f} ms  leaves {r.leaves}  "
+            people = ""
+            if r.activity is not None:
+                people = "  learning stage" if r.learning else f"  people {r.people_count}"
+            lines.append(f"{r.fps:.1f} fps  {r.timings.get('total', 0):.1f} ms  leaves {r.leaves}{people}  "
                          f"errors {self.session.runner.errors}  restarts {self.restarts}  mem {rss_mb():.0f} MB")
             cams = "  ".join(f"{(c.name or c.id)}:{r.camera_status.get(c.id, '-')}" for c in self.scene.cameras)
             lines.append(f"cameras  {cams or 'none'}")
@@ -339,7 +354,7 @@ class Show(QObject):
             return
         upper = {"B": self._toggle_blackout, "F": self._toggle_freeze, "R": self.reload,
                  "H": self._toggle_hud, "T": self._toggle_pattern, "I": self.outputs.identify,
-                 "S": self.snapshot}
+                 "S": self.snapshot, "L": self._relearn}
         if text in upper:
             upper[text]()
             return
@@ -354,6 +369,10 @@ class Show(QObject):
     def _toggle_blackout(self) -> None:
         self.outputs.set_blackout(not self.outputs.blackout)
         log.info("blackout %s", "on" if self.outputs.blackout else "off")
+
+    def _relearn(self) -> None:
+        self.session.relearn_background()
+        log.info("learning the empty stage")
 
     def _toggle_freeze(self) -> None:
         self.frozen = not self.frozen

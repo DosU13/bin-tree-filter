@@ -64,6 +64,11 @@ class TreeSnapshot:
     color: np.ndarray | None         # (n_nodes, 3) float32 BGR, None before the first update
     dom: np.ndarray | None           # (n_nodes,) int32
     version: int = 0
+    # Wave rings (core.presence.WaveEmitter): x, y (cells), birth (pipeline clock), strength.
+    # Renderers draw them at clock + (time.perf_counter() - wall): the pipeline clock now.
+    waves: np.ndarray | None = None  # (n, 4) float64
+    clock: float = 0.0               # pipeline clock when the snapshot was taken (s)
+    wall: float = 0.0                # time.perf_counter() at that moment
 
     @property
     def n_nodes(self) -> int:
@@ -274,6 +279,11 @@ class OrnamentTree:
         self.tau_color = 0.12
         self.split_time = 0.15         # duration of one level's cross-fade
 
+        # Presence (only when update() gets an activity map)
+        self.still_depth = 2           # deepest split level where nothing moves
+        self.still_dim = 0.7           # still areas fade this far towards dim_color
+        self.dim_color = (181, 217, 253)
+
         self.set_proc_size(proc_size)
         self.reset()
 
@@ -292,10 +302,40 @@ class OrnamentTree:
         if self.n_sq > 1:
             pts = pts * (self.cols, self.rows)
         self._finest_proc = _descend(pts, self.max_level, cols=self.cols, rows=self.rows)
+        self._finest_px = np.bincount(self._finest_proc, minlength=self.n_cells).astype(np.float32)
+        self._node_px = self._sum_levels(self._finest_px)
         self._hist = None
 
     def level_slice(self, level: int) -> slice:
         return slice(int(self.offsets[level]), int(self.offsets[level] + self.sizes[level]))
+
+    def _sum_levels(self, finest: np.ndarray) -> np.ndarray:
+        """Per-node sums of a per-finest-cell value, flat node order (level 0 first)."""
+        parts = [finest]
+        for _ in range(self.max_level):
+            parts.append(parts[-1][0::2] + parts[-1][1::2])
+        return np.concatenate(parts[::-1])
+
+    def _max_levels(self, finest: np.ndarray) -> np.ndarray:
+        parts = [finest]
+        for _ in range(self.max_level):
+            parts.append(np.maximum(parts[-1][0::2], parts[-1][1::2]))
+        return np.concatenate(parts[::-1])
+
+    def _activity_stats(self, activity: np.ndarray, outline: np.ndarray | None):
+        """Per node: mean and max activity, and whether the outline's edge cuts it
+        (pixels both inside and outside; None without an outline)."""
+        px = np.maximum(self._node_px, 1.0)
+        a = np.bincount(self._finest_proc, weights=activity.ravel(), minlength=self.n_cells).astype(np.float32)
+        mean = self._sum_levels(a) / px
+        peak = self._max_levels(a / np.maximum(self._finest_px, 1.0))
+        cut = None
+        if outline is not None:
+            o = np.bincount(self._finest_proc, weights=outline.ravel().astype(np.float32),
+                            minlength=self.n_cells).astype(np.float32)
+            inside = self._sum_levels(o)
+            cut = (inside >= 0.5) & (self._node_px - inside >= 0.5)
+        return mean, peak, cut
 
     def reset(self) -> None:
         self._hist = None
@@ -311,8 +351,15 @@ class OrnamentTree:
 
     # -- per-frame update ----------------------------------------------------
 
-    def update(self, labels: np.ndarray, palette_bgr: np.ndarray, dt: float) -> None:
-        """Feed one frame of palette labels, shape proc_shape."""
+    def update(self, labels: np.ndarray, palette_bgr: np.ndarray, dt: float,
+               activity: np.ndarray | None = None, outline: np.ndarray | None = None) -> None:
+        """Feed one frame of palette labels, shape proc_shape.
+
+        With *activity* (float 0..1, proc_shape; see core.presence) detail follows
+        people: still areas split no deeper than still_depth and fade still_dim of
+        the way to dim_color.  *outline* (bool, where someone is this frame) also
+        splits triangles that its edge cuts, so silhouettes stay crisp.
+        """
         k = len(palette_bgr)
         lm = self.max_level
 
@@ -330,13 +377,17 @@ class OrnamentTree:
         # Histograms of every node: sum children bottom-up, store level 0 first
         parts = [self._hist]
         for _ in range(lm):
-            parts.append(parts[-1].reshape(-1, 2, k).sum(axis=1))
+            parts.append(parts[-1][0::2] + parts[-1][1::2])     # (faster than a size-2 reduce)
         hist = np.concatenate(parts[::-1])
 
         best = hist.argmax(axis=1)
         top = hist[self._node_ar, best]
         total = hist.sum(axis=1)
         purity = np.where(total > 1e-6, top / np.maximum(total, 1e-6), 1.0)
+        if activity is not None:
+            act_mean, act_peak, cut = self._activity_stats(activity, outline)
+            if cut is not None:
+                purity = np.where(cut, 0.0, purity)
 
         if first or self.dom is None:
             dom = best
@@ -351,6 +402,11 @@ class OrnamentTree:
                          np.where(purity >= merge_at, False, self.split))
         split[self._node_level < self.min_depth] = True
         split[self._node_level >= min(self.max_depth, lm)] = False
+        if activity is not None:
+            # Depth allowed per node grows with the most active pixel in it
+            still = min(self.still_depth, self.max_depth)
+            allowed = np.maximum(still + act_peak * (self.max_depth - still), self.min_depth)
+            split[self._node_level >= allowed] = False
 
         # A node can only be split if its parent is
         for level in range(1, lm + 1):
@@ -399,6 +455,9 @@ class OrnamentTree:
 
         # Animate node colours towards their dominant palette colour
         target_col = np.asarray(palette_bgr, dtype=np.float32)[dom]
+        if activity is not None and self.still_dim > 0:
+            fade = (self.still_dim * (1.0 - act_mean))[:, None]
+            target_col += fade * (np.asarray(self.dim_color, dtype=np.float32) - target_col)
         if first or self.color is None or not self.animate or self.color.shape != target_col.shape:
             self.color = target_col
         else:

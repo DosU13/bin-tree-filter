@@ -6,6 +6,10 @@ the code that reads it (core.pipeline.apply_params).
 
 Values live in plain dicts {key: value} so they serialise to JSON as-is.
 Colours are '#rrggbb' strings; convert with core.filters.hex_to_bgr.
+
+Most options belong to the look (saved in looks, crossfaded).  A few are show
+settings (Param.look = False): tuned once for the site and its hardware, never
+saved in looks and never changed by a crossfade or the idle look.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from typing import Any
 from core.filters import BG_PRESETS, FG_PRESETS, bgr_to_hex, hex_to_bgr
 from core.posterize import PALETTE_STYLES
 
-KINDS = ("int", "float", "bool", "choice", "color", "path")
+KINDS = ("int", "float", "bool", "choice", "color", "path", "look")
 MODES = ("colour", "depth")
 
 
@@ -28,7 +32,7 @@ class Param:
         key:      Name used in dicts, JSON and code.
         label:    Text shown in the UI.
         group:    UI section.
-        kind:     One of KINDS.
+        kind:     One of KINDS ("look": name of one of the scene's looks, "" = none).
         default:  Default value.
         min, max: Range for numbers.
         step:     Hotkey / spin-box increment for numbers.
@@ -36,6 +40,7 @@ class Param:
         keys:     Hotkeys: (decrease, increase) for numbers, (toggle,) / (cycle,) otherwise.
         mode:     Only relevant in this mode ("colour" / "depth"); None = always.
         help:     Tooltip.
+        look:     Part of looks; False = show setting (see the module docstring).
     """
 
     key: str
@@ -50,6 +55,7 @@ class Param:
     keys: tuple[str, ...] = ()
     mode: str | None = None
     help: str = ""
+    look: bool = True
 
     @property
     def decimals(self) -> int:
@@ -127,7 +133,54 @@ PARAMS: tuple[Param, ...] = (
     Param("tile_crop", "Crop tile margin", "Render", "bool", False,
           help="Trim the tile's white margin so the ink touches the edges"),
     Param("proc_size", "Statistics resolution", "Render", "int", 128, 32, 512, 32, keys=("p", "P"),
-          help="Pixels per stage cell used for colour statistics"),
+          help="Pixels per stage cell used for colour and motion statistics (show setting: costs CPU)",
+          look=False),
+
+    # --- Presence ----------------------------------------------------------
+    # Moving people are found against a learned picture of the empty stage
+    Param("presence", "People only", "Presence", "bool", False, keys=("o",),
+          help="Full ornament only where people move; still areas fade and coarsen"),
+    Param("still_dim", "Still areas fade", "Presence", "float", 0.7, 0.0, 1.0, 0.05,
+          help="How far still areas fade towards the background colour (1 = gone)"),
+    Param("still_depth", "Still areas depth", "Presence", "int", 2, 0, 12, 1,
+          help="Deepest split level where nobody moves"),
+    Param("presence_trail", "Trail (s)", "Presence", "float", 1.0, 0.0, 10.0, 0.1,
+          help="How long detail lingers where someone has just been"),
+    Param("presence_palette", "Colours from people", "Presence", "bool", True, mode="colour",
+          help="Fit the posterize colours to the people, so clothes keep their colours"),
+    Param("presence_threshold", "Motion threshold", "Presence", "int", 24, 4, 100, 1,
+          help="Colour difference (0-255) from the empty stage that counts as a person; "
+               "lower is more sensitive (show setting)", look=False),
+    Param("presence_absorb", "Absorb still after (s)", "Presence", "float", 60.0, 0.0, 600.0, 5.0,
+          help="Someone or something that stays perfectly still this long becomes background; "
+               "0 = never (show setting)", look=False),
+    Param("presence_min_size", "Smallest person (%)", "Presence", "float", 1.0, 0.1, 20.0, 0.1,
+          help="Moving areas smaller than this share of a cell are noise (show setting)", look=False),
+
+    # --- Waves -------------------------------------------------------------
+    Param("waves", "Waves", "Waves", "bool", False, keys=("w",),
+          help="Rings of finer triangles spread from where people stand"),
+    Param("wave_interval", "Pulse every (s)", "Waves", "float", 2.5, 0.0, 10.0, 0.1,
+          help="Each person sends a new ring this often; 0 = only when they arrive"),
+    Param("wave_origin", "Ring centre", "Waves", "choice", "feet", choices=("feet", "body"),
+          help="feet: bottom of the person's outline (front cameras); body: its centre (top-down cameras)"),
+    Param("wave_speed", "Speed (cells/s)", "Waves", "float", 0.6, 0.05, 5.0, 0.05),
+    Param("wave_range", "Range (cells)", "Waves", "float", 1.5, 0.2, 10.0, 0.1,
+          help="Distance a ring travels before it has faded"),
+    Param("wave_width", "Ring width (cells)", "Waves", "float", 0.12, 0.02, 1.0, 0.01),
+    Param("wave_depth", "Ring detail (+levels)", "Waves", "int", 3, 0, 8, 1,
+          help="Triangles under a ring's crest split this many more times"),
+    Param("wave_glow", "Glow", "Waves", "float", 0.6, 0.0, 1.0, 0.05,
+          help="How far the ornament under a ring tints towards the glow colour"),
+    Param("wave_color", "Glow colour", "Waves", "color", "#b4232d"),
+
+    # --- Idle --------------------------------------------------------------
+    Param("idle_look", "Idle look", "Idle", "look", "",
+          help="Crossfade to this look while nobody is on stage (show setting)", look=False),
+    Param("idle_after", "After nobody for (s)", "Idle", "float", 20.0, 1.0, 600.0, 1.0, look=False,
+          help="Seconds without anyone on stage before the idle look starts (show setting)"),
+    Param("idle_fade", "Idle fade (s)", "Idle", "float", 3.0, 0.0, 30.0, 0.5, look=False,
+          help="Crossfade time into and out of the idle look (show setting)"),
 )
 
 BY_KEY: dict[str, Param] = {p.key: p for p in PARAMS}
@@ -158,7 +211,7 @@ def coerce(key: str, value: Any) -> Any:
         hex_to_bgr(str(value))   # validates
         return str(value).lower()
     else:
-        return str(value)
+        return str(value)          # path, look
     if p.min is not None:
         v = max(p.min, v)
     if p.max is not None:
@@ -214,11 +267,24 @@ def hotkeys(mode: str) -> dict[str, tuple[str, int]]:
     return out
 
 
+def look_values(values: dict[str, Any]) -> dict[str, Any]:
+    """The part of *values* a look stores (show settings left out)."""
+    return {k: v for k, v in values.items() if k in BY_KEY and BY_KEY[k].look}
+
+
+def look_target(current: dict[str, Any], look: dict[str, Any]) -> dict[str, Any]:
+    """Values after switching from *current* to *look*: the look's values, the current show settings."""
+    return normalise(dict(current, **look_values(look)))
+
+
 def interpolate(a: dict[str, Any], b: dict[str, Any], t: float) -> dict[str, Any]:
-    """Blend two value dicts: numbers and colours glide, everything else switches at t = 0.5."""
+    """Blend two value dicts: numbers and colours glide, everything else switches at t = 0.5.
+
+    Show settings (Param.look = False) keep a's value.
+    """
     out = dict(a)
     for p in PARAMS:
-        if p.key not in a or p.key not in b:
+        if p.key not in a or p.key not in b or not p.look:
             continue
         va, vb = a[p.key], b[p.key]
         if p.kind == "float":
