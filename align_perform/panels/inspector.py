@@ -152,6 +152,17 @@ def _move(t, dx: float = 0.0, dy: float = 0.0) -> None:
         t.corners = [[x + dx, y + dy] for x, y in t.corners]
 
 
+def _set_depth_range(src, near: float | None = None, far: float | None = None) -> None:
+    """Change an Astra's depth range, pushing the other end so near stays < far."""
+    gap = 0.1
+    if near is not None:
+        src.depth_near = near
+        src.depth_far = max(src.depth_far, near + gap)
+    if far is not None:
+        src.depth_far = far
+        src.depth_near = max(0.0, min(src.depth_near, far - gap))
+
+
 def _set_corner(t, i: int, x: float | None = None, y: float | None = None) -> None:
     if t.corners is None:
         return
@@ -266,6 +277,15 @@ class CameraPage(Page, PlacementMixin):
         form.addRow("Status", self.status)
         form.addRow(btns)
 
+        form3 = self.group("Depth range")
+        self.depth_box = form3.parentWidget()
+        self.near = dspin(0.0, 9.5, 0.05, 2, " m")
+        self.far = dspin(0.5, 10.0, 0.05, 2, " m")
+        form3.addRow("Near (white)", self.near)
+        form3.addRow("Far (dark)", self.far)
+        form3.addRow(HintLabel("Depth mode's band (Band min / max, 0–255) picks a slice of this range; "
+                               "black = no reading."))
+
         self.build_placement()
         form2 = self.group("Image")
         self.rotation = combo([f"{r}°" for r in ROTATIONS], list(ROTATIONS))
@@ -293,6 +313,8 @@ class CameraPage(Page, PlacementMixin):
         self.contrast.valueChanged.connect(lambda v: self.edit("Contrast", lambda s: setattr(s.color, "contrast", v)))
         self.saturation.valueChanged.connect(lambda v: self.edit("Saturation", lambda s: setattr(s.color, "saturation", v)))
         self.feather.valueChanged.connect(lambda v: self.edit("Feather", lambda s: setattr(s, "feather", v)))
+        self.near.valueChanged.connect(lambda v: self.edit("Depth near", lambda s: _set_depth_range(s.source, near=v)))
+        self.far.valueChanged.connect(lambda v: self.edit("Depth far", lambda s: _set_depth_range(s.source, far=v)))
         self._statuses: dict[str, str] = {}
 
     def aspect(self, spec) -> float:
@@ -334,6 +356,9 @@ class CameraPage(Page, PlacementMixin):
         set_quiet(self.contrast, s.color.contrast)
         set_quiet(self.saturation, s.color.saturation)
         set_quiet(self.feather, s.feather)
+        self.depth_box.setVisible(src.kind == "astra" and src.stream == "depth")
+        set_quiet(self.near, src.depth_near)
+        set_quiet(self.far, src.depth_far)
 
 
 class ProjectorPage(Page, PlacementMixin):

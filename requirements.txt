@@ -4,3 +4,4 @@ pillow~=12.3.0
 PySide6-Essentials~=6.12.0
 moderngl~=5.13.0
 cv2-enumerate-cameras~=1.4.0
+openni~=2.3.0

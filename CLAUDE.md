@@ -7,13 +7,14 @@ Programs: `live.py` (original single-camera tool), `python -m align_perform` (se
 ## Setup
 
 - Windows, Python **3.12** venv in `.venv/` (not committed). Python 3.10 is end of life and PySide6 ≥ 6.12 needs ≥ 3.10.
-- Runtime: numpy, opencv-python (not `-headless`: live.py uses `cv2.imshow`), pillow, PySide6-Essentials, moderngl, cv2-enumerate-cameras. Dev: pytest.
+- Runtime: numpy, opencv-python (not `-headless`: live.py uses `cv2.imshow`), pillow, PySide6-Essentials, moderngl, cv2-enumerate-cameras, openni (ctypes OpenNI2 bindings, for Astra depth cameras). Dev: pytest.
+- Astra depth cameras need OpenNI2 + Orbbec's driver DLLs from the Astra SDK's `bin` folder, found via `OPENNI2_REDIST64`, `vendor/openni2/` (gitignored) or an `AstraSDK*` folder next to the project (`core.astra.runtime_dir`). Not needed otherwise; `-m astra` tests skip without one.
 - Needs an OpenGL 3.3 GPU for projector output and previews (developed on an RTX 2070).
 
 ```
 py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
-.venv\Scripts\python -m pytest                # ~130 tests, ~75 s; gui tests open real windows briefly
+.venv\Scripts\python -m pytest                # ~175 tests, ~100 s; gui tests open real windows briefly
 .venv\Scripts\python -m pytest -m "not gui"   # headless subset
 ```
 
@@ -27,7 +28,8 @@ py -3.12 -m venv .venv
 | `core/params.py` | Registry of every tunable option: UI widgets, hotkeys, JSON, crossfades are generated from it. `Param.look = False` marks show settings (not in looks, never crossfaded; `look_values`, `look_target`) |
 | `core/scene.py` | Scene model (stage, cameras, projectors, params, looks) ↔ JSON v1 |
 | `core/geometry.py` | 3×3 transforms: rects, 4-corner warps, camera rotation / mirror, quad distance |
-| `core/sources.py` | live.py sources + scene sources (`LiveSource` thread with pacing and reconnect, `SyncSource`, probe, webcam list) |
+| `core/sources.py` | live.py sources + scene sources (`LiveSource` thread with pacing and reconnect, `SyncSource`, probe, webcam list); `FrameReader.update` takes settings that apply without reopening |
+| `core/astra.py` | Orbbec Astra through OpenNI2: runtime lookup, one shared device per URI (depth + colour cameras on one Astra), `AstraReader` (depth mm → grey via `depth_lut`: near 255 … far 1, no reading 0) |
 | `core/compositor.py` | Stitch cameras into the stage at proc resolution, feathered overlaps, per-camera colour fix, depth band |
 | `core/pipeline.py` | `Pipeline` (one frame per `step`) and `PipelineRunner` (background thread, never stops on errors) |
 | `core/view.py` | `RenderView` / `BlendSpec` and builders: projector, stage and world views, edge-blend maths |
