@@ -1,5 +1,7 @@
 """Frame sources: webcam, video file, animated GIF, still image (all return BGR frames).
 
+Orbbec Astra depth cameras live in core.astra (AstraReader, made by make_reader).
+
 Two families:
 
 * live.py's simple sources (CameraSource, VideoSource, GifSource, ImageSource,
@@ -205,6 +207,9 @@ class FrameReader:
         """Next BGR frame, or None on failure."""
         raise NotImplementedError
 
+    def update(self, spec) -> None:
+        """Adopt source settings that apply without reopening (e.g. an Astra's depth range)."""
+
     def close(self) -> None:
         pass
 
@@ -337,6 +342,9 @@ def make_reader(spec, resolve=lambda p: p) -> FrameReader:
     """Reader for a core.scene.SourceSpec; *resolve* maps scene paths to absolute paths."""
     if spec.kind == "webcam":
         return WebcamReader(spec)
+    if spec.kind == "astra":
+        from core.astra import AstraReader
+        return AstraReader(spec)
     path = resolve(spec.path)
     if spec.kind == "video":
         return VideoReader(path)

@@ -19,6 +19,14 @@ py -3.12 -m venv .venv
 
 A GPU with OpenGL 3.3 is needed for projector output (any NVIDIA / AMD card from the last decade). `requirements-dev.txt` adds pytest.
 
+**Depth camera (optional): Orbbec Astra / Astra S.** It isn't a webcam; it is read through OpenNI2 with Orbbec's driver.
+
+1. Install the Orbbec driver (`SensorDriver_V4.3.0.22.exe`), re-plug the camera and reboot. Windows lists it as *ORBBEC … Depth Sensor*.
+2. Unpack the Astra SDK (`AstraSDK-v2.1.3-…-win64`) **next to the project folder**: its `bin` folder (with `OpenNI2.dll` and `orbbec.dll`) is found automatically. Elsewhere: copy that `bin` folder to `vendor\openni2` in the project, or set `OPENNI2_REDIST64` to it.
+3. Plug the Astra **straight into the PC**, not into a USB hub (on a shared hub it fails with *USB transfer timeout*), and keep half a metre clear in front of it: anything a few cm away switches its laser off and all depth reads as nothing. It measures from about 0.4 m to 5 m.
+
+OrbbecViewer (Orbbec SDK v1) does not see the older Astra S; that is expected.
+
 ## Workflow
 
 ### 1. Align (Align Perform)
@@ -28,7 +36,7 @@ A GPU with OpenGL 3.3 is needed for projector output (any NVIDIA / AMD card from
 ```
 
 1. **Stage.** Select *Stage* in the scene list. The ornament lives only on the stage: a grid of square *cells*; the cell size is the ornament's scale. *Fit stage to projectors* sizes it for you once projectors are placed.
-2. **Cameras.** *Add › Camera…* (Ctrl+Shift+C): pick a webcam (press *Test source* to see its real resolution) or, for testing, a video / image / GIF file. Each camera is a rectangle on the canvas showing the part of the stage it sees. Switch the view to *Camera images* (Ctrl+4) and line the cameras up so overlapping parts match; *Stitched input* (Ctrl+2) shows the result. Per-camera brightness / contrast / saturation in the inspector evens out cameras that expose differently; *Edge feather* sets how wide overlapping cameras cross-fade.
+2. **Cameras.** *Add › Camera…* (Ctrl+Shift+C): pick a webcam (press *Test source* to see its real resolution), an Astra on the *Depth camera* tab, or, for testing, a video / image / GIF file. An Astra's depth stream is a grey picture, near white and far dark, from *Near* to *Far* (adjust them live in the inspector's *Depth range*); in depth mode (Look tab, *Mode*) *Band min / max* (0–255) pick the slice of that range that gets the ornament. Each camera is a rectangle on the canvas showing the part of the stage it sees. Switch the view to *Camera images* (Ctrl+4) and line the cameras up so overlapping parts match; *Stitched input* (Ctrl+2) shows the result. Per-camera brightness / contrast / saturation in the inspector evens out cameras that expose differently; *Edge feather* sets how wide overlapping cameras cross-fade.
 3. **Projectors.** *Add › Projector…* (Ctrl+Shift+P): pick a display, or *Window (testing)* on a one-monitor PC. Each projector is a rectangle showing the part of the stage it lights. Where projectors overlap, they are blended automatically (*Edge blend*, *Gamma*, *Brightness gain* in the inspector).
 4. **Physical alignment.** *Output › Projector outputs* (F5) opens every projector full screen. *Test pattern* (F6) projects a grid, names, the stage outline and other projectors' edges over a blended grey field: move and size the rectangles until the projected grid lines meet across projectors and the grey looks even in the overlaps. With the test pattern on, arrow keys on a projector move it (Shift: ×10). For angled surfaces tick *4-corner warp* and drag corners on the canvas, or press Tab on the projector to pick a corner and nudge it with the arrows. *Identify* (F7) shows each projector's number.
 5. **Look.** The *Look* tab has every option of `live.py` (and more). With the canvas focused, `live.py`'s keys work too (d/D, h/H, c/C, g, x, …; F1 lists them). Save favourite settings in the *Looks* tab and crossfade between them. *Seamless colours* (`j`) keeps different colours from meeting along an inked ornament edge: where they would, the triangles split until the colour change falls on edges without ink (the smallest triangles share a colour instead); best with polarity *alternate* and few colours, as it adds detail along colour boundaries.

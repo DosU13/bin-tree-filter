@@ -20,7 +20,8 @@ from core import geometry as geo
 from core import params as P
 
 SCENE_VERSION = 1
-SOURCE_KINDS = ("webcam", "video", "image", "gif")
+SOURCE_KINDS = ("webcam", "astra", "video", "image", "gif")
+ASTRA_STREAMS = ("depth", "colour")
 OUTPUT_KINDS = ("screen", "window", "none")
 BACKENDS = ("any", "msmf", "dshow")
 ROTATIONS = (0, 90, 180, 270)
@@ -111,6 +112,9 @@ class SourceSpec:
 
     width / height: for webcams the requested capture size (0 = driver default);
     after probing, the real frame size.  For files, the probed frame size.
+    Astra depth cameras (core.astra): index among connected Astras, device_name =
+    serial number, width / height = stream mode; depth_near / depth_far (metres)
+    map to white / black for depth mode and change without reopening.
     """
 
     kind: str = "webcam"
@@ -123,10 +127,15 @@ class SourceSpec:
     fps: float = 0.0
     fourcc: str = ""
     noise: float = 0.0       # image sources: simulated sensor noise (std, 0..255)
+    stream: str = "depth"    # astra: "depth" or "colour"
+    depth_near: float = 0.5
+    depth_far: float = 4.5
 
     def label(self) -> str:
         if self.kind == "webcam":
             return f"Webcam {self.index}" + (f" ({self.device_name})" if self.device_name else "")
+        if self.kind == "astra":
+            return f"Astra {self.index} {self.stream}" + (f" ({self.device_name})" if self.device_name else "")
         return os.path.basename(self.path) or self.kind
 
 
@@ -341,6 +350,11 @@ class Scene:
                 raise SceneError(f"camera {c.id}: unknown source kind {c.source.kind!r}")
             if c.source.backend not in BACKENDS:
                 raise SceneError(f"camera {c.id}: unknown backend {c.source.backend!r}")
+            if c.source.kind == "astra":
+                if c.source.stream not in ASTRA_STREAMS:
+                    raise SceneError(f"camera {c.id}: Astra stream must be one of {ASTRA_STREAMS}")
+                if not 0 <= c.source.depth_near < c.source.depth_far:
+                    raise SceneError(f"camera {c.id}: depth range must have 0 <= near < far")
             if c.transform.rotation not in ROTATIONS:
                 raise SceneError(f"camera {c.id}: rotation must be one of {ROTATIONS}")
             _check_transform(c.transform, f"camera {c.id}")

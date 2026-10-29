@@ -96,8 +96,10 @@ def apply_params(values: dict, tree: OrnamentTree, tracker: PaletteTracker) -> N
 
 
 def _source_key(cam) -> tuple:
+    """Source settings that need the source reopened (an Astra's depth range doesn't)."""
     s = cam.source
-    return (s.kind, s.index, s.device_name, s.backend, s.path, s.width, s.height, s.fps, s.fourcc, s.noise)
+    return (s.kind, s.index, s.device_name, s.backend, s.path, s.width, s.height, s.fps, s.fourcc, s.noise,
+            s.stream)
 
 
 class Pipeline:
@@ -154,6 +156,8 @@ class Pipeline:
                 self.sources[cam_id] = open_scene_source(cam.source, self.scene.resolve, name=cam.name or cam_id,
                                                          realtime=self.realtime)
                 self._source_keys[cam_id] = _source_key(cam)
+            else:
+                self.sources[cam_id].reader.update(cam.source)
 
     def set_scene(self, scene: Scene) -> None:
         """Adopt an edited scene: only what changed is rebuilt / reopened."""
@@ -174,7 +178,7 @@ class Pipeline:
                 if o is None or o.transform != cam.transform or o.feather != cam.feather:
                     self.compositor.remove(cam.id)
                     moved = True
-                elif o.enabled != cam.enabled or _source_key(o) != _source_key(cam) or o.color != cam.color:
+                elif o.enabled != cam.enabled or o.source != cam.source or o.color != cam.color:
                     moved = True
             for cam_id in set(old_cams) - {c.id for c in self.scene.cameras}:
                 self.compositor.remove(cam_id)

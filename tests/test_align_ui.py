@@ -188,7 +188,7 @@ def test_save_and_reopen(app, win, tmp_path):
 def test_add_camera_dialog_probes_a_file(app):
     from align_perform.dialogs.add_camera import AddCameraDialog
     dlg = AddCameraDialog(None)
-    dlg.tabs.setCurrentIndex(1)
+    dlg.tabs.setCurrentWidget(dlg.file_tab)
     dlg.path.setText(os.path.join(ROOT, "scenes", "media", "cam_mid.mp4"))
     dlg._test()
     deadline = time.time() + 10
