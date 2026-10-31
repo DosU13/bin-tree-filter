@@ -38,17 +38,32 @@ def list_screens() -> list[ScreenInfo]:
     return out
 
 
+def pick_screen(output, keys: list[tuple[str, str]], by_index: bool = True) -> int | None:
+    """Which display a projector OutputSpec means: by serial, then name, then index.
+
+    Args:
+        output: the projector's OutputSpec.
+        keys: (serial, name) of each connected display, in screen order.
+        by_index: fall back to the saved index when no serial or name matches.
+
+    Returns:
+        Index into *keys*, or None.
+
+    Projectors of one make often report the same placeholder serial and name (Epson:
+    16843009, "EPSON PJ"), so when several displays match, the saved index picks one.
+    """
+    index = output.screen_index if 0 <= output.screen_index < len(keys) else None
+    for field, value in enumerate((output.screen_serial, output.screen_name)):
+        if not value:
+            continue
+        hits = [i for i, k in enumerate(keys) if k[field] == value]
+        if hits:
+            return index if index in hits else hits[0]
+    return index if by_index else None
+
+
 def find_screen(output) -> QScreen | None:
-    """The QScreen a projector OutputSpec means: by serial, then name, then index."""
+    """The QScreen a projector OutputSpec means (see pick_screen)."""
     screens = QGuiApplication.screens()
-    if output.screen_serial:
-        for s in screens:
-            if s.serialNumber() == output.screen_serial:
-                return s
-    if output.screen_name:
-        for s in screens:
-            if s.name() == output.screen_name:
-                return s
-    if 0 <= output.screen_index < len(screens):
-        return screens[output.screen_index]
-    return None
+    i = pick_screen(output, [(s.serialNumber(), s.name()) for s in screens])
+    return None if i is None else screens[i]

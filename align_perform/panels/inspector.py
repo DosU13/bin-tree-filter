@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QCheckBox, QFormLayout, QGroupBox, QHBoxLayout, Q
                                QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from align_perform.panels.widgets import HintLabel, combo, dspin, ispin, set_quiet
-from align_perform.runtime.screens import list_screens
+from align_perform.runtime.screens import list_screens, pick_screen
 from core.scene import ROTATIONS
 
 STATUS_TEXT = {"ok": "running", "starting": "starting…", "stalled": "stalled (no new frames)",
@@ -460,13 +460,13 @@ class ProjectorPage(Page, PlacementMixin):
         set_quiet(self.output_kind, s.output.kind)
         self.screen.blockSignals(True)
         self.screen.clear()
-        found = False
-        for info in list_screens():
+        infos = list_screens()
+        for info in infos:
             self.screen.addItem(info.label(), info)
-            if (s.output.screen_serial and info.serial == s.output.screen_serial) or info.name == s.output.screen_name:
-                self.screen.setCurrentIndex(self.screen.count() - 1)
-                found = True
-        if s.output.kind == "screen" and not found:
+        current = pick_screen(s.output, [(i.serial, i.name) for i in infos], by_index=False)
+        if current is not None:
+            self.screen.setCurrentIndex(current)
+        if s.output.kind == "screen" and current is None:
             self.screen.addItem(f"Not connected: {s.output.screen_name or s.output.screen_index}", None)
             self.screen.setCurrentIndex(self.screen.count() - 1)
         self.screen.blockSignals(False)
