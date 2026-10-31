@@ -30,7 +30,7 @@ py -3.12 -m venv .venv
 | `core/geometry.py` | 3×3 transforms: rects, 4-corner warps, camera rotation / mirror, quad distance |
 | `core/sources.py` | live.py sources + scene sources (`LiveSource` thread with pacing and reconnect, `SyncSource`, probe, webcam list); `FrameReader.update` takes settings that apply without reopening |
 | `core/astra.py` | Orbbec Astra through OpenNI2: runtime lookup, one shared device per URI (depth + colour cameras on one Astra), `AstraReader` (depth mm → `DepthCleaner` (median, smoothing + hold over time, shadows filled row-wise from the far side) → grey via `depth_lut`: near 255 … far 1, no reading 0) |
-| `core/compositor.py` | Stitch cameras into the stage at proc resolution, feathered overlaps, per-camera colour fix; depth pictures (`compose_depth`: mean of the readings, holes skipped) |
+| `core/compositor.py` | Stitch cameras into the stage at proc resolution, feathered overlaps, per-camera colour fix; depth pictures (`compose_depth`: mean of the readings, holes skipped); mirror fold (`fold_image` / `fold_depth`: one picture for two projectors, the second mirroring) |
 | `core/pipeline.py` | `Pipeline` (one frame per `step`) and `PipelineRunner` (background thread, never stops on errors) |
 | `core/view.py` | `RenderView` / `BlendSpec` and builders: projector, stage and world views, edge-blend maths |
 | `core/looks.py` | `LookFader` crossfades, `IdleFader` + `idle_mix` (idle look while nobody is on stage) |
@@ -47,7 +47,7 @@ py -3.12 -m venv .venv
 
 ## Data flow
 
-Capture threads (one per camera, `LiveSource`) → pipeline thread (`PipelineRunner`: compositor → `PresenceTracker` (when presence, waves or an idle look need it) → `MotionGlow` (when glow is on) → filters → `PaletteTracker` or `DepthLayers` → `glow_labels` → `OrnamentTree.update` (with activity) → `WaveEmitter` → `IdleFader` → `TreeSnapshot`) → Qt main thread: `LiveSession` polls `runner.latest()` for the canvas preview (GPU offscreen, exactly the visible world rect at screen resolution), `ProjectorOutputs` pulls the newest snapshot every 15 ms and each `ProjectorWindow` renders it with `GLRenderer`. Edits go document → `LiveSession.set_scene` / `ProjectorOutputs.set_scene` (debounced 40 ms); the runner applies queued changes between frames.
+Capture threads (one per camera, `LiveSource`) → pipeline thread (`PipelineRunner`: compositor (+ mirror fold) → `PresenceTracker` (when presence, waves or an idle look need it) → `MotionGlow` (when glow is on) → filters → `PaletteTracker` or `DepthLayers` → `glow_labels` → `OrnamentTree.update` (with activity) → `WaveEmitter` → `IdleFader` → `TreeSnapshot`) → Qt main thread: `LiveSession` polls `runner.latest()` for the canvas preview (GPU offscreen, exactly the visible world rect at screen resolution), `ProjectorOutputs` pulls the newest snapshot every 15 ms and each `ProjectorWindow` renders it with `GLRenderer`. Edits go document → `LiveSession.set_scene` / `ProjectorOutputs.set_scene` (debounced 40 ms); the runner applies queued changes between frames.
 
 Settings in force are `Pipeline.effective` = `idle_mix(params, looks, FrameResult.idle)`; renderers mix their style the same way (`LiveSession.render_params`, `ProjectorOutputs.render_params`), so the pipeline and the projectors agree without passing params around. The editor runs the idle look only when *Run idle look* is on (`PipelineRunner.set_idle`); perform.py always does.
 

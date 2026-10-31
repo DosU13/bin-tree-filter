@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from core import geometry as geo
+from core import params as P
 from core.pipeline import Pipeline, PipelineRunner
 from core.scene import Scene
 from core.view import blend_alpha, blend_spec, projector_view, stage_view
@@ -209,5 +210,16 @@ def test_idle_needs_permission_and_relearn_on_request():
             pipe.step(1 / 15)
         pipe.set_scene(moved)                            # the stage picture changes: relearn
         assert pipe.step(1 / 15).learning
+    finally:
+        pipe.close()
+
+
+def test_mirror_fold(scene):
+    scene.params["fold"] = "left-right"
+    pipe = Pipeline(scene, realtime=False)
+    try:
+        r = pipe.step(1 / 15)
+        assert np.array_equal(r.stage_input, r.stage_input[:, ::-1])
+        assert "fold" not in P.look_values(pipe.params)        # a show setting, not part of looks
     finally:
         pipe.close()

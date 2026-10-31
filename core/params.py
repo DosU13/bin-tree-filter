@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from core.compositor import FOLDS
 from core.filters import BG_PRESETS, FG_PRESETS, bgr_to_hex, hex_to_bgr
 from core.posterize import DEPTH_PALETTES, PALETTE_STYLES
 
@@ -113,6 +114,11 @@ PARAMS: tuple[Param, ...] = (
     Param("brightness", "Brightness", "Input", "int", 0, -100, 100, 10, keys=("b", "B"), mode="colour"),
     Param("contrast", "Contrast", "Input", "float", 1.0, 0.1, 3.0, 0.1, keys=("n", "N"), mode="colour"),
     Param("saturation", "Saturation", "Input", "float", 1.0, 0.0, 3.0, 0.1, keys=("t", "T"), mode="colour"),
+    Param("fold", "Mirror fold", "Input", "choice", "off", choices=FOLDS, look=False,
+          help="Two projectors fed one picture, the second set to mirror: the stage is laid over its mirror "
+               "image (colour: averaged; depth: the nearer), so whoever stands in front of either half sees "
+               "themselves.  Make the stage both projectors wide and place one projector on the first half "
+               "(show setting)"),
 
     # --- Depth -------------------------------------------------------------
     Param("depth_min", "Band min", "Depth", "int", 60, 0, 250, 5, keys=("a", "A"), mode="depth",

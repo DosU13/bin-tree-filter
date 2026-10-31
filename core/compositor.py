@@ -10,6 +10,10 @@ compositor precomputes (inside the camera's bounding box on that grid):
 A frame is then: area-downscale, per-camera colour fix, remap, weighted sum.
 Grid pixels no camera sees are reported as uncovered.  Depth mode stitches
 grey depth pictures instead (compose_depth), skipping pixels without a reading.
+
+Mirror fold (fold_image / fold_depth) lays the stitched stage over its own
+mirror image, for two projectors fed one picture with the second set to
+mirror: whoever stands in front of either half then shows up in both.
 """
 
 from __future__ import annotations
@@ -37,6 +41,36 @@ class CameraMap:
 def smoothstep(x: np.ndarray) -> np.ndarray:
     t = np.clip(x, 0.0, 1.0)
     return t * t * (3 - 2 * t)
+
+
+# ---------------------------------------------------------------------------
+# Mirror fold
+# ---------------------------------------------------------------------------
+
+FOLDS = ("off", "left-right", "top-bottom")
+
+
+def _mirror(a: np.ndarray, fold: str) -> np.ndarray:
+    return a[:, ::-1] if fold == "left-right" else a[::-1]
+
+
+def fold_image(img: np.ndarray, covered: np.ndarray, fold: str) -> tuple[np.ndarray, np.ndarray]:
+    """Colour mode: the stage averaged with its mirror image (where only one is seen, that one)."""
+    m_img, m_cov = _mirror(img, fold), _mirror(covered, fold)
+    avg = ((img.astype(np.uint16) + m_img) // 2).astype(np.uint8)
+    out = np.where((covered & m_cov)[:, :, None], avg, np.where(m_cov[:, :, None], m_img, img))
+    return out, covered | m_cov
+
+
+def fold_depth(depth: np.ndarray, valid: np.ndarray, covered: np.ndarray, fold: str
+               ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Depth mode: the nearer (brighter) of each pixel and its mirror image.
+
+    Not the average: a person at 1 m averaged with the wall at 3 m would float at 2 m.
+    """
+    m_depth, m_valid = _mirror(depth, fold), _mirror(valid, fold)
+    near = np.where(m_valid & (~valid | (m_depth > depth)), m_depth, depth)
+    return near, valid | m_valid, covered | _mirror(covered, fold)
 
 
 class Compositor:

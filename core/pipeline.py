@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from core import params as P
-from core.compositor import Compositor
+from core.compositor import Compositor, fold_depth, fold_image
 from core.engine import OrnamentTree, TreeSnapshot, load_tile, tile_edge_ink
 from core.filters import apply_blur, apply_filters, apply_sharpen, hex_to_bgr
 from core.glow import MotionGlow, glow_labels
@@ -255,9 +255,13 @@ class Pipeline:
         t = time.perf_counter()
         if p["mode"] == "depth":
             depth, valid, covered = self.compositor.compose_depth(cams, frames)
+            if p["fold"] != "off":
+                depth, valid, covered = fold_depth(depth, valid, covered, p["fold"])
             raw = np.repeat(np.rint(depth).astype(np.uint8)[:, :, None], 3, axis=2)
         else:
             raw, covered = self.compositor.compose(cams, frames)
+            if p["fold"] != "off":
+                raw, covered = fold_image(raw, covered, p["fold"])
         timings["stitch"] = (time.perf_counter() - t) * 1000
 
         # People: motion against the learned empty stage (on the unfiltered picture,

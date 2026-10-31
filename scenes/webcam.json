@@ -30,7 +30,7 @@
         "depth_clean": true
       },
       "transform": {
-        "x": 407.4146341463414,
+        "x": 22.055342110943172,
         "y": 0.0,
         "width": 1436.7219512195122,
         "height": 1077.5414634146343,
@@ -97,6 +97,7 @@
     "brightness": -100,
     "contrast": 2.8,
     "saturation": 1.2,
+    "fold": "left-right",
     "depth_min": 60,
     "depth_max": 140,
     "depth_layers": 1,

@@ -57,9 +57,21 @@ So that people see *themselves* in the mosaic, the filter can find who is moving
 
 - **Motion glow** (`l`): movement lights the ornament up, and a small fluid simulation carries the light on, so a waving hand sends it further (*Flow*: how hard movement pushes it, 0 = it stays put; *Fade*: how long it lasts). *Light from*: *motion* lights whatever moves; *person* lights whoever is in front of the environment, even standing still: the environment is each pixel's most common value over the last *Environment memory* seconds (30 by default), so it learns itself while people play and needs no *Learn empty stage*; *both* lights the person dimmer and their movement full. It works in both modes; with a depth camera only what is nearer than the environment counts, and the changing projection shouldn't trigger it the way it can with a webcam. *Light threshold* sets how much change counts (depth: 8 ≈ 12 cm with a 4 m range). With *People only* on, lit areas also get full detail. The light takes the main colour of the palette in use (*Layer colours* / *Palette style*): the red of navy-red-gold, tush-kiyiz and shyrdak. That colour then lights only the glow: the layers or posterize colours use the rest. Without a palette (*fade*, *natural*) it is *Light colour*, white by default. It glows best on a dark background.
 
-Names in italics in the *Look* tab (*Motion threshold*, *Absorb still after*, *Smallest person*, the idle settings, *Statistics resolution*) are **show settings**: tuned once for the site, they are not saved in looks and never change in a crossfade.
+Names in italics in the *Look* tab (*Motion threshold*, *Absorb still after*, *Smallest person*, the idle settings, *Statistics resolution*, *Light threshold*, *Environment memory*, *Mirror fold*) are **show settings**: tuned once for the site, they are not saved in looks and never change in a crossfade.
 
 Tips: lock the webcams' exposure and white balance if the driver allows it; keep the projection out of the cameras' view (the projected picture changing looks like movement); `scenes\people.json` is a ready example with a test clip of two walkers.
+
+### Two projectors, one picture (mirror fold)
+
+When the PC can only feed one picture to two projectors (a splitter, or Windows' *Duplicate these displays*), the second projector can mirror it, and *Mirror fold* makes that work:
+
+1. Put the projectors side by side. Feed both the same picture and set the second one to mirror left-right in its own menu (often *Rear* projection). For projectors one above the other, use top-bottom (*Ceiling*) instead.
+2. Make the stage as wide as both projected areas together, with the centre line where they meet (don't use *Fit stage to projectors*: it would fit the one projector). Place the camera(s) over the whole stage as usual.
+3. Add **one** projector, on the first projector's half of the stage.
+4. Look tab › Input › *Mirror fold*: *left-right* (or *top-bottom*).
+
+The stage is laid over its mirror image: averaged in colour mode, the nearer of the two in depth mode. Whoever stands in front of either projector sees themselves in place there, with a mirrored ghost of whoever is at the other one.
+
 ### 2. Perform
 
 ```

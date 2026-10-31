@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-from core.compositor import Compositor
+from core.compositor import Compositor, fold_depth, fold_image
 from core.scene import CameraSpec, ColorFix, SourceSpec, Stage, Transform
 from tests.engine_cases import ROOT
 
@@ -110,3 +110,28 @@ def test_maps_follow_frame_size_changes():
     img, covered = comp.compose(cams, frames)
     assert comp.maps["c0"].frame_size == (360, 270)
     assert np.abs(img.astype(int) - expected(pano).astype(int)).mean() < 4.0
+
+
+def test_mirror_fold_lays_the_stage_over_its_mirror_image():
+    img = np.zeros((4, 6, 3), np.uint8)
+    img[1, 0] = 200                           # someone at the left edge
+    img[2, 4] = 100                           # someone right of centre
+    covered = np.ones((4, 6), bool)
+    covered[:, 5] = False                     # no camera sees the right edge
+    out, cov = fold_image(img, covered, "left-right")
+    assert cov.all()
+    assert np.array_equal(out, out[:, ::-1])  # both halves show the same, mirrored
+    assert out[1, 0, 0] == 200                # only the left edge is seen there: kept as it is
+    assert out[2, 4, 0] == 50 and out[2, 1, 0] == 50      # averaged with the empty mirror pixel
+    top, _ = fold_image(img, np.ones((4, 6), bool), "top-bottom")
+    assert np.array_equal(top, top[::-1])
+
+
+def test_mirror_fold_of_depth_keeps_the_nearer():
+    depth = np.full((2, 4), 60, np.float32)   # the wall
+    depth[0, 0] = 220                         # someone near, on the left
+    valid = np.ones((2, 4), bool)
+    valid[1, 3] = False                       # no reading on the right
+    near, ok, cov = fold_depth(depth, valid, valid.copy(), "left-right")
+    assert near[0, 3] == 220 and near[0, 0] == 220
+    assert near[1, 3] == 60 and ok.all() and cov.all()
