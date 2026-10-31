@@ -33,6 +33,7 @@ def test_live_py_hotkeys_are_covered():
         assert k in colour, k
     for k in "aAzZfb":
         assert k in depth, k
+    assert depth["c"] == ("depth_layers", -1) and depth["k"] == ("depth_palette", +1)
 
 
 def test_coerce_clamps_and_converts():

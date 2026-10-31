@@ -87,14 +87,18 @@ def test_colour_fix_matches_cameras():
     assert np.abs(fixed.astype(int) - ref).mean() < np.abs(raw.astype(int) - ref).mean() - 2
 
 
-def test_band_mode():
-    gray = np.zeros((540, 720), np.uint8)
-    gray[:, 300:420] = 100                    # in band
+def test_depth_mode_stitches_depth_and_skips_missing_readings():
+    gray = np.full((540, 720), 30, np.uint8)  # far wall
+    gray[:, 300:420] = 200                    # someone near
+    gray[::3, 300:420] = 0                    # a third of their readings missing
+    gray[:, 600:] = 0                         # nothing at all
     cam = CameraSpec(id="d", source=SourceSpec(width=720, height=540), transform=Transform(0, 0, 720, 540))
-    band, covered = Compositor(STAGE, PROC).compose_band([cam], {"d": gray}, 60, 140)
-    cols = band[:, :85].mean(axis=0)
-    assert cols[38:46].min() > 0.9 and cols[:30].max() < 0.1
+    depth, valid, covered = Compositor(STAGE, PROC).compose_depth([cam], {"d": gray})
     assert covered[:, :84].all() and not covered[:, 90:].any()
+    assert np.allclose(depth[:, 40:44], 200, atol=0.5)          # holes don't pull it towards far
+    assert np.allclose(depth[:, 10:30], 30, atol=0.5)
+    assert valid[:, 40:44].all() and not valid[:, 72:84].any() and not valid[:, 90:].any()
+    assert (depth[~valid] == 0).all()
 
 
 def test_maps_follow_frame_size_changes():

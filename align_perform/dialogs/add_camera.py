@@ -64,6 +64,7 @@ class AddCameraDialog(QDialog):
         self.resolve = resolve
         self.result_spec: SourceSpec | None = None
         self._serial = ""                 # serial of the Astra being edited (kept if not reconnected)
+        self._depth_clean = SourceSpec.depth_clean     # its clean-up setting (edited in the inspector)
         self._frame_size = (0, 0)
         self._fps = 0.0
 
@@ -232,6 +233,7 @@ class AddCameraDialog(QDialog):
             self.near.setValue(spec.depth_near)
             self.far.setValue(spec.depth_far)
             self._serial = spec.device_name
+            self._depth_clean = spec.depth_clean
         elif spec.kind == "webcam":
             self.tabs.setCurrentWidget(self.cam_tab)
             for i in range(self.cam_list.count()):
@@ -258,7 +260,7 @@ class AddCameraDialog(QDialog):
             near, far = self.near.value(), self.far.value()
             return SourceSpec(kind="astra", index=idx, device_name=astra.known_serial(uri) or self._serial,
                               stream=self.astra_stream.currentData(), width=w, height=h,
-                              depth_near=near, depth_far=max(far, near + 0.1))
+                              depth_near=near, depth_far=max(far, near + 0.1), depth_clean=self._depth_clean)
         if self.tabs.currentWidget() is self.cam_tab:
             item = self.cam_list.currentItem()
             if item is None:

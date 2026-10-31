@@ -29,6 +29,33 @@ def test_depth_maps_near_to_white_and_far_to_dark():
     assert np.all(np.diff(ramp.astype(int)) <= 0) and ramp.min() == 1
 
 
+def test_cleaner_removes_speckle_and_fills_shadows_from_the_far_side():
+    mm = np.full((60, 640), 3000, np.uint16)         # a wall at 3 m
+    mm[:, 100:200] = 1500                            # someone at 1.5 m
+    mm[:, 200:230] = 0                               # their shadow on the wall
+    mm[:, 400:460] = 0                               # a hole too wide to guess
+    mm[:, 600:] = 0                                  # out of range up to the frame's edge
+    mm[10, 300] = 0                                  # speckle: a lost reading
+    mm[40, 320] = 800                                # speckle: a stray one
+    out = astra.DepthCleaner()(mm, 0.0)
+    assert (out[:, 100:200] == 1500).all()
+    assert (out[:, 200:230] == 3000).all()           # the wall's depth, not the person's
+    assert (out[:, 405:455] == 0).all() and (out[:, 605:] == 0).all()
+    assert out[10, 300] == 3000 and out[40, 320] == 3000
+
+
+def test_cleaner_smooths_noise_takes_movement_and_holds_dropouts():
+    clean = astra.DepthCleaner()
+    wall = np.full((20, 20), 3000, np.uint16)
+    clean(wall, 0.0)
+    assert 3000 < clean(wall + 40, 1 / 30)[10, 10] < 3040     # noise (within 3 % at 3 m): smoothed
+    near = np.full_like(wall, 1500)
+    assert (clean(near, 2 / 30) == 1500).all()                # someone stepped in: at once
+    blank = np.zeros_like(wall)
+    assert (clean(blank, 3 / 30) == 1500).all()               # readings lost for a moment: held
+    assert (clean(blank, 3 / 30 + astra.HOLD_SECONDS) == 0).all()
+
+
 def test_runtime_dir_lookup_order(tmp_path):
     def sdk(path):
         path.mkdir(parents=True)
@@ -48,7 +75,7 @@ def test_runtime_dir_lookup_order(tmp_path):
 
 
 def test_scene_round_trips_an_astra_and_checks_it():
-    scene = astra_scene(device_name="17112510331", stream="depth", depth_near=0.8, depth_far=3.0)
+    scene = astra_scene(device_name="17112510331", stream="depth", depth_near=0.8, depth_far=3.0, depth_clean=False)
     again = Scene.from_dict(scene.to_dict())
     assert again.cameras[0].source == scene.cameras[0].source
     assert again.cameras[0].source.label() == "Astra 0 depth (17112510331)"
@@ -91,9 +118,10 @@ def test_depth_range_changes_without_reopening(monkeypatch):
     try:
         src = pipe.sources["cam1"]
         scene.cameras[0].source.depth_far = 2.5
+        scene.cameras[0].source.depth_clean = False
         pipe.set_scene(scene)
         assert pipe.sources["cam1"] is src and len(RecordingReader.opened) == 1
-        assert src.reader.spec.depth_far == 2.5
+        assert src.reader.spec.depth_far == 2.5 and not src.reader.spec.depth_clean
         scene.cameras[0].source.stream = "colour"
         pipe.set_scene(scene)
         assert pipe.sources["cam1"] is not src and len(RecordingReader.opened) == 2

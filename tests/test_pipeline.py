@@ -76,6 +76,11 @@ def test_depth_mode(scene):
     try:
         r = pipe.step(1 / 15)
         assert len(np.unique(r.labels_image.reshape(-1, 3), axis=0)) <= 2
+        pipe.set_params(dict(pipe.params, depth_layers=5, depth_min=5, depth_max=255, depth_palette="shyrdak"))
+        r = pipe.step(1 / 15)
+        colours = np.unique(r.labels_image.reshape(-1, 3), axis=0)
+        assert 3 <= len(colours) <= 6
+        assert np.array_equal(r.stage_input[:, :, 0], r.stage_input[:, :, 2])     # the depth picture, grey
     finally:
         pipe.close()
 

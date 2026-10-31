@@ -14,7 +14,7 @@ Programs: `live.py` (original single-camera tool), `python -m align_perform` (se
 ```
 py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
-.venv\Scripts\python -m pytest                # ~175 tests, ~100 s; gui tests open real windows briefly
+.venv\Scripts\python -m pytest                # ~190 tests, ~100 s; gui tests open real windows briefly
 .venv\Scripts\python -m pytest -m "not gui"   # headless subset
 ```
 
@@ -24,17 +24,18 @@ py -3.12 -m venv .venv
 |---|---|
 | `core/` | Qt-free runtime shared by all three programs |
 | `core/engine.py` | `OrnamentTree` (multi-cell bintree decisions + animation), `NumpyRenderer` (CPU reference renderer, lookup tables), `OrnamentEngine` (1×1 + NumPy renderer, live.py API), `TreeSnapshot`, `load_tile` |
-| `core/posterize.py` | `PaletteTracker`: temporally stable k-means, optional fit mask, palette styles |
+| `core/posterize.py` | `PaletteTracker`: temporally stable k-means, optional fit mask, palette styles; depth mode's `DepthLayers` (band cut into slices by distance, edge hysteresis) + `depth_palette` |
 | `core/params.py` | Registry of every tunable option: UI widgets, hotkeys, JSON, crossfades are generated from it. `Param.look = False` marks show settings (not in looks, never crossfaded; `look_values`, `look_target`) |
 | `core/scene.py` | Scene model (stage, cameras, projectors, params, looks) ↔ JSON v1 |
 | `core/geometry.py` | 3×3 transforms: rects, 4-corner warps, camera rotation / mirror, quad distance |
 | `core/sources.py` | live.py sources + scene sources (`LiveSource` thread with pacing and reconnect, `SyncSource`, probe, webcam list); `FrameReader.update` takes settings that apply without reopening |
-| `core/astra.py` | Orbbec Astra through OpenNI2: runtime lookup, one shared device per URI (depth + colour cameras on one Astra), `AstraReader` (depth mm → grey via `depth_lut`: near 255 … far 1, no reading 0) |
-| `core/compositor.py` | Stitch cameras into the stage at proc resolution, feathered overlaps, per-camera colour fix, depth band |
+| `core/astra.py` | Orbbec Astra through OpenNI2: runtime lookup, one shared device per URI (depth + colour cameras on one Astra), `AstraReader` (depth mm → `DepthCleaner` (median, smoothing + hold over time, shadows filled row-wise from the far side) → grey via `depth_lut`: near 255 … far 1, no reading 0) |
+| `core/compositor.py` | Stitch cameras into the stage at proc resolution, feathered overlaps, per-camera colour fix; depth pictures (`compose_depth`: mean of the readings, holes skipped) |
 | `core/pipeline.py` | `Pipeline` (one frame per `step`) and `PipelineRunner` (background thread, never stops on errors) |
 | `core/view.py` | `RenderView` / `BlendSpec` and builders: projector, stage and world views, edge-blend maths |
 | `core/looks.py` | `LookFader` crossfades, `IdleFader` + `idle_mix` (idle look while nobody is on stage) |
 | `core/presence.py` | `PresenceTracker` (motion mask vs a learned empty stage, trails, tracked people), `WaveEmitter` (wave rings), `draw_presence` (debug view) |
+| `core/glow.py` | `MotionGlow`: light from motion (vs an EMA of recent frames) and / or the person (vs the environment = per-pixel mode over `glow_memory` s, decaying histogram), dye in a coarse stable-fluids sim pushed by Farneback flow; `glow_labels` paints it over the labels as 3 extra shades of `pipeline.glow_colour` (the palette's main colour, `posterize.PALETTE_MAIN`, reserved for the glow via `posterize.split_main`) |
 | `align_perform/` | PySide6 editor: `main_window.py`, `document.py` (scene + undo), `commands.py`, `actions.py` (all actions as a table), `canvas/` (view, scene, items, handles, snapping), `panels/` (scene tree, inspector, look, looks, status), `dialogs/` (add camera / projector) |
 | `align_perform/runtime/` | Shared with perform.py: `gl_renderer.py` (moderngl shader renderer, `OffscreenGL`), `qt_gl.py`, `session.py` (pipeline + GPU canvas preview), `outputs.py` + `projector_window.py` (projector windows), `test_patterns.py`, `screens.py` |
 | `perform.py` | Show runner: outputs, look keys, blackout, watchdog, logs, keep-awake |
@@ -46,7 +47,7 @@ py -3.12 -m venv .venv
 
 ## Data flow
 
-Capture threads (one per camera, `LiveSource`) → pipeline thread (`PipelineRunner`: compositor → `PresenceTracker` (when presence, waves or an idle look need it) → filters → `PaletteTracker` or depth band → `OrnamentTree.update` (with activity) → `WaveEmitter` → `IdleFader` → `TreeSnapshot`) → Qt main thread: `LiveSession` polls `runner.latest()` for the canvas preview (GPU offscreen, exactly the visible world rect at screen resolution), `ProjectorOutputs` pulls the newest snapshot every 15 ms and each `ProjectorWindow` renders it with `GLRenderer`. Edits go document → `LiveSession.set_scene` / `ProjectorOutputs.set_scene` (debounced 40 ms); the runner applies queued changes between frames.
+Capture threads (one per camera, `LiveSource`) → pipeline thread (`PipelineRunner`: compositor → `PresenceTracker` (when presence, waves or an idle look need it) → `MotionGlow` (when glow is on) → filters → `PaletteTracker` or `DepthLayers` → `glow_labels` → `OrnamentTree.update` (with activity) → `WaveEmitter` → `IdleFader` → `TreeSnapshot`) → Qt main thread: `LiveSession` polls `runner.latest()` for the canvas preview (GPU offscreen, exactly the visible world rect at screen resolution), `ProjectorOutputs` pulls the newest snapshot every 15 ms and each `ProjectorWindow` renders it with `GLRenderer`. Edits go document → `LiveSession.set_scene` / `ProjectorOutputs.set_scene` (debounced 40 ms); the runner applies queued changes between frames.
 
 Settings in force are `Pipeline.effective` = `idle_mix(params, looks, FrameResult.idle)`; renderers mix their style the same way (`LiveSession.render_params`, `ProjectorOutputs.render_params`), so the pipeline and the projectors agree without passing params around. The editor runs the idle look only when *Run idle look* is on (`PipelineRunner.set_idle`); perform.py always does.
 

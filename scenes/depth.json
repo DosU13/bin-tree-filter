@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "stage": {
+    "x": 0,
+    "y": 0,
+    "cols": 2,
+    "rows": 1,
+    "cell_size": 1080,
+    "levels": 12
+  },
+  "cameras": [
+    {
+      "id": "cam1",
+      "name": "Camera 1",
+      "enabled": true,
+      "source": {
+        "kind": "astra",
+        "index": 0,
+        "device_name": "",
+        "backend": "any",
+        "path": "",
+        "width": 640,
+        "height": 480,
+        "fps": 0.0,
+        "fourcc": "",
+        "noise": 0.0,
+        "stream": "depth",
+        "depth_near": 0.5,
+        "depth_far": 4.5
+      },
+      "transform": {
+        "x": 0.0,
+        "y": 0,
+        "width": 1440.0,
+        "height": 1080,
+        "rotation": 0,
+        "mirror": false,
+        "corners": null
+      },
+      "color": {
+        "brightness": 0,
+        "contrast": 1.0,
+        "saturation": 1.0
+      },
+      "feather": 173
+    }
+  ],
+  "projectors": [
+    {
+      "id": "proj1",
+      "name": "Projector 1",
+      "enabled": true,
+      "output": {
+        "kind": "window",
+        "screen_name": "",
+        "screen_serial": "",
+        "screen_index": -1,
+        "width": 1920,
+        "height": 1080
+      },
+      "transform": {
+        "x": 0.0,
+        "y": 0,
+        "width": 1920.0,
+        "height": 1080,
+        "rotation": 0,
+        "mirror": false,
+        "corners": null
+      },
+      "blend": {
+        "feather": "auto",
+        "gamma": 2.2
+      },
+      "gain": 1.0
+    }
+  ],
+  "params": {
+    "mode": "depth",
+    "max_depth": 8,
+    "min_depth": 0,
+    "threshold": 0.75,
+    "hysteresis": 0.08,
+    "color_hysteresis": 0.15,
+    "conforming": true,
+    "seamless": false,
+    "animate": true,
+    "split_time": 0.15,
+    "tau_hist": 0.15,
+    "tau_color": 0.12,
+    "colors": 4,
+    "palette_style": "natural",
+    "palette_tau": 0.6,
+    "label_margin": 4.0,
+    "blur": 0,
+    "sharpen": 0.0,
+    "brightness": 0,
+    "contrast": 1.0,
+    "saturation": 1.0,
+    "depth_min": 0,
+    "depth_max": 220,
+    "depth_fg": "#aaff7f",
+    "depth_bg": "#ff0000",
+    "polarity": "alternate",
+    "cord": false,
+    "wireframe": false,
+    "background": "#fdd9b5",
+    "tile": "ornam.jpg",
+    "tile_crop": false,
+    "proc_size": 128,
+    "presence": false,
+    "still_dim": 0.7,
+    "still_depth": 2,
+    "presence_trail": 1.0,
+    "presence_palette": true,
+    "presence_threshold": 24,
+    "presence_absorb": 60.0,
+    "presence_min_size": 1.0,
+    "waves": false,
+    "wave_interval": 1.3,
+    "wave_origin": "feet",
+    "wave_speed": 0.6,
+    "wave_range": 1.5,
+    "wave_width": 0.27,
+    "wave_depth": 3,
+    "wave_glow": 0.6,
+    "wave_color": "#b4232d",
+    "idle_look": "",
+    "idle_after": 20.0,
+    "idle_fade": 3.0
+  },
+  "looks": {}
+}

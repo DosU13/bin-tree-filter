@@ -27,8 +27,9 @@ from core import params as P
 from core.compositor import Compositor
 from core.engine import OrnamentTree, TreeSnapshot, load_tile, tile_edge_ink
 from core.filters import apply_blur, apply_filters, apply_sharpen, hex_to_bgr
+from core.glow import MotionGlow, glow_labels
 from core.looks import IdleFader, idle_mix
-from core.posterize import PaletteTracker
+from core.posterize import DepthLayers, PaletteTracker, depth_palette, split_main
 from core.presence import Person, PresenceTracker, WaveEmitter
 from core.scene import Scene
 from core.sources import open_scene_source
@@ -88,6 +89,7 @@ def apply_params(values: dict, tree: OrnamentTree, tracker: PaletteTracker) -> N
         tracker.k = values["colors"]
         tracker.reset()
     tracker.style = values["palette_style"]
+    tracker.glow = values["glow"]
     tracker.tau = values["palette_tau"]
     tracker.label_margin = values["label_margin"]
     tree.still_depth = values["still_depth"]
@@ -95,8 +97,14 @@ def apply_params(values: dict, tree: OrnamentTree, tracker: PaletteTracker) -> N
     tree.dim_color = render_background(values)
 
 
+def glow_colour(values: dict) -> tuple[int, int, int]:
+    """The motion glow's colour (BGR): the main colour of the palette in use, else Light colour."""
+    split = split_main(values["depth_palette"] if values["mode"] == "depth" else values["palette_style"])
+    return hex_to_bgr(split[1] if split else values["glow_color"])
+
+
 def _source_key(cam) -> tuple:
-    """Source settings that need the source reopened (an Astra's depth range doesn't)."""
+    """Source settings that need the source reopened (an Astra's depth range and clean-up don't)."""
     s = cam.source
     return (s.kind, s.index, s.device_name, s.backend, s.path, s.width, s.height, s.fps, s.fourcc, s.noise,
             s.stream)
@@ -112,10 +120,12 @@ class Pipeline:
         self.sources: dict[str, object] = {}
         self._source_keys: dict[str, tuple] = {}
         self.tracker = PaletteTracker(k=self.params["colors"])
+        self.layers = DepthLayers()
         self.tree: OrnamentTree | None = None
         self.compositor: Compositor | None = None
         self.presence = PresenceTracker()
         self.waves = WaveEmitter()
+        self.glow = MotionGlow()
         self.idle = IdleFader()
         self.idle_enabled = True
         self.effective = self.params
@@ -185,6 +195,7 @@ class Pipeline:
                 moved = True
             if moved:
                 self.presence.relearn()          # the stage picture changed, not people
+                self.glow.forget_environment()
         self._sync_sources()
 
     def set_params(self, values: dict) -> None:
@@ -243,8 +254,8 @@ class Pipeline:
         cams = self.scene.cameras
         t = time.perf_counter()
         if p["mode"] == "depth":
-            band, covered = self.compositor.compose_band(cams, frames, p["depth_min"], p["depth_max"])
-            raw = np.repeat((band * 255).astype(np.uint8)[:, :, None], 3, axis=2)
+            depth, valid, covered = self.compositor.compose_depth(cams, frames)
+            raw = np.repeat(np.rint(depth).astype(np.uint8)[:, :, None], 3, axis=2)
         else:
             raw, covered = self.compositor.compose(cams, frames)
         timings["stitch"] = (time.perf_counter() - t) * 1000
@@ -263,9 +274,23 @@ class Pipeline:
         else:
             self._presence_off += dt
 
+        # Motion glow: from the depth picture, or the cameras' brightness in colour mode
+        glow = None
+        if p["glow"]:
+            t = time.perf_counter()
+            depth_mode = p["mode"] == "depth"
+            glow = self.glow.update(depth if depth_mode else raw, valid if depth_mode else covered, dt,
+                                    source=p["glow_from"], depth=depth_mode, threshold=p["glow_threshold"],
+                                    memory=p["glow_memory"], flow=p["glow_flow"], fade=p["glow_fade"],
+                                    cell_px=p["proc_size"])
+            timings["glow"] = (time.perf_counter() - t) * 1000
+        else:
+            self.glow.clear()
+
         if p["mode"] == "depth":
-            labels = (band > 0.5).astype(np.int64)
-            palette = np.array([hex_to_bgr(p["depth_bg"]), hex_to_bgr(p["depth_fg"])], np.float32)
+            labels = self.layers.update(depth, valid, p["depth_min"], p["depth_max"], p["depth_layers"])
+            palette = depth_palette(p["depth_layers"], p["depth_palette"], hex_to_bgr(p["depth_fg"]),
+                                    hex_to_bgr(p["depth_bg"]), glow=p["glow"])
             stage_input = raw
         else:
             t = time.perf_counter()
@@ -287,10 +312,14 @@ class Pipeline:
             palette = np.vstack([palette, np.array(hex_to_bgr(p["background"]), np.float32)[None]])
             timings["posterize"] = (time.perf_counter() - t) * 1000
 
+        if glow is not None:
+            labels, palette = glow_labels(labels, palette, glow, glow_colour(p), render_background(p))
+
         t = time.perf_counter()
         self.tree.edge_ink = self._edge_ink(p) if p["seamless"] else None
         if pres is not None and p["presence"]:
-            self.tree.update(labels, palette, dt, activity=pres.activity, outline=pres.mask)
+            activity = pres.activity if glow is None else np.maximum(pres.activity, glow)
+            self.tree.update(labels, palette, dt, activity=activity, outline=pres.mask)
         else:
             self.tree.update(labels, palette, dt)
         timings["tree"] = (time.perf_counter() - t) * 1000

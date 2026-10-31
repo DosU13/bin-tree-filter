@@ -8,7 +8,8 @@ compositor precomputes (inside the camera's bounding box on that grid):
                    world px inside, so overlapping cameras cross-fade
 
 A frame is then: area-downscale, per-camera colour fix, remap, weighted sum.
-Grid pixels no camera sees are reported as uncovered.
+Grid pixels no camera sees are reported as uncovered.  Depth mode stitches
+grey depth pictures instead (compose_depth), skipping pixels without a reading.
 """
 
 from __future__ import annotations
@@ -142,13 +143,16 @@ class Compositor:
         np.divide(acc, wsum[:, :, None], out=out, where=covered[:, :, None])
         return np.clip(out + 0.5, 0, 255).astype(np.uint8), covered
 
-    def compose_band(self, cameras, frames: dict[str, np.ndarray], lo: int, hi: int) -> tuple[np.ndarray, np.ndarray]:
-        """Depth mode: (fraction of each grid pixel inside the band 0..1, covered).
+    def compose_depth(self, cameras, frames: dict[str, np.ndarray]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Depth mode: (depth float32 HxW 0..255, valid bool HxW, covered bool HxW).
 
-        The band test runs on full-resolution grayscale frames; the resulting mask
-        is area-downscaled and stitched, so thin shapes don't alias away.
+        Frames are grey depth pictures (near bright, 0 = no reading).  A grid pixel
+        averages only the readings it covers, so holes don't drag depths towards
+        far; it is valid where most of it had a reading.  The per-camera colour
+        fix is not applied: it would shift depths.
         """
         acc = np.zeros((self.height, self.width), dtype=np.float32)
+        vsum = np.zeros((self.height, self.width), dtype=np.float32)
         wsum = np.zeros((self.height, self.width), dtype=np.float32)
         for cam in cameras:
             frame = frames.get(cam.id)
@@ -161,16 +165,19 @@ class Compositor:
                 if m is None:
                     continue
             gray = frame if frame.ndim == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            band = ((gray >= lo) & (gray <= hi)).astype(np.float32)
+            # (depth, has a reading): area-downscaling sums both, so depth / readings = mean reading
+            pair = cv2.merge([gray.astype(np.float32), (gray > 0).astype(np.float32)])
             if m.small_size != size:
-                band = cv2.resize(band, m.small_size, interpolation=cv2.INTER_AREA)
+                pair = cv2.resize(pair, m.small_size, interpolation=cv2.INTER_AREA)
                 self.last_small[cam.id] = cv2.resize(frame, m.small_size, interpolation=cv2.INTER_AREA)
             else:
                 self.last_small[cam.id] = frame
-            img = cv2.remap(band, m.map_x, m.map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-            acc[m.box] += img * m.weight
+            img = cv2.remap(pair, m.map_x, m.map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+            acc[m.box] += img[:, :, 0] * m.weight
+            vsum[m.box] += img[:, :, 1] * m.weight
             wsum[m.box] += m.weight
         covered = wsum > 0
-        out = np.zeros_like(acc)
-        np.divide(acc, wsum, out=out, where=covered)
-        return out, covered
+        valid = vsum > 0.5 * wsum
+        depth = np.zeros_like(acc)
+        np.divide(acc, vsum, out=depth, where=valid)
+        return depth, valid, covered

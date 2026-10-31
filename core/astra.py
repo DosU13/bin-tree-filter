@@ -9,7 +9,8 @@ is the first of these that holds OpenNI2.dll:
     2. vendor/openni2 in the project (copy the SDK's bin folder there)
     3. an Astra SDK unpacked next to the project folder (../AstraSDK*/bin)
 
-Depth frames are millimetres (0 = no reading).  AstraReader turns them into a
+Depth frames are millimetres (0 = no reading).  AstraReader steadies them
+(DepthCleaner, unless the source's depth_clean is off) and turns them into a
 grey picture for depth mode: depth_near is white (255), depth_far and beyond
 almost black (1), no reading black (0), so depth mode's band picks a slice of
 the room.
@@ -25,8 +26,10 @@ from __future__ import annotations
 import ctypes
 import glob
 import logging
+import math
 import os
 import threading
+import time
 from dataclasses import dataclass
 
 import cv2
@@ -41,6 +44,13 @@ DEPTH_SIZES = ((640, 480), (320, 240), (160, 120), (1280, 1024))
 COLOUR_SIZES = ((640, 480), (320, 240), (1280, 960))
 READ_TIMEOUT = 0.5               # s without a frame before read() gives up (LiveSource reconnects after 5)
 DARK_WARNING_FRAMES = 60         # all-zero depth frames in a row before warning about the laser
+
+# Clean-up (DepthCleaner)
+HOLD_SECONDS = 0.25              # a pixel that loses its reading keeps the last one this long
+SMOOTH_TAU = 0.08                # s: time constant for small changes (noise)
+JITTER_MM = 25.0                 # changes below max(JITTER_MM, JITTER_FRACTION * depth) count as noise;
+JITTER_FRACTION = 0.03           # bigger ones (something moved) are taken at once
+FILL_GAP = 1 / 16                # widest hole filled, as a share of the frame width (40 px at 640)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SETUP_HINT = ("set OPENNI2_REDIST64 to the Astra SDK's bin folder, copy that folder to vendor/openni2, "
@@ -207,6 +217,72 @@ def depth_to_gray(depth_mm: np.ndarray, near_m: float, far_m: float) -> np.ndarr
     return depth_lut(near_m, far_m)[depth_mm]
 
 
+class DepthCleaner:
+    """Steadies a depth stream (uint16 millimetres, 0 = no reading), one frame per call.
+
+    1. A 5x5 median removes speckle: lone pixels with or without a reading.
+    2. Per pixel over time, small changes (sensor noise, which grows with
+       distance) are smoothed and big ones (something moved) taken at once.  A
+       pixel that loses its reading keeps its last one for HOLD_SECONDS: edges
+       and dark surfaces flicker in and out.
+    3. Holes still left take, row by row, the farther of the depths at their two
+       ends: the camera's shadow beside a person (its laser sits to one side)
+       lies on the background behind them.  Holes wider than FILL_GAP or
+       touching the frame's edge (out of range, too close) stay 0.  A second
+       median evens out the streaks row-by-row filling leaves.
+    """
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self._depth: np.ndarray | None = None    # float32 steady depth (mm), 0 = none
+        self._seen: np.ndarray | None = None     # float32 time of each pixel's last reading (s since _start)
+        self._start = self._time = 0.0
+
+    def __call__(self, mm: np.ndarray, now: float) -> np.ndarray:
+        mm = cv2.medianBlur(mm, 5)
+        new = mm.astype(np.float32)
+        valid = mm > 0
+        if self._depth is None or self._depth.shape != new.shape:
+            self._depth, self._seen, self._start = new, np.zeros(new.shape, np.float32), now
+        else:
+            d, t = self._depth, np.float32(now - self._start)
+            noise = cv2.absdiff(new, d) < np.maximum(JITTER_MM, JITTER_FRACTION * d)
+            noise &= valid
+            a = 1.0 - math.exp(-max(now - self._time, 1e-3) / SMOOTH_TAU)
+            cv2.accumulateWeighted(new, d, a, mask=noise.view(np.uint8))      # d += a * (new - d)
+            np.copyto(d, new, where=valid & ~noise)
+            np.copyto(d, 0.0, where=~valid & (t - self._seen >= HOLD_SECONDS))
+            np.copyto(self._seen, t, where=valid)
+        self._time = now
+        return cv2.medianBlur(fill_rows(self._depth.astype(np.uint16), round(FILL_GAP * mm.shape[1])), 5)
+
+
+def fill_rows(mm: np.ndarray, max_gap: int) -> np.ndarray:
+    """Fill each run of 0 within a row, up to *max_gap* long, with the larger (farther) of its two ends."""
+    h, w = mm.shape
+    hole = np.zeros((h, w + 2), np.int8)         # zero-padded, so no run crosses a row
+    hole[:, 1:-1] = mm == 0
+    edges = np.diff(hole.ravel())
+    first = np.flatnonzero(edges == 1)           # flat padded index + 1 = a run's first pixel
+    if not len(first):
+        return mm
+    last = np.flatnonzero(edges == -1)           # ... = its last pixel
+    row = first // (w + 2)
+    first, last = first % (w + 2), last % (w + 2) - 1      # columns in mm
+    n = last - first + 1
+    ok = (first > 0) & (last < w - 1) & (n <= max_gap)
+    row, first, last, n = row[ok], first[ok], last[ok], n[ok]
+    if not len(n):
+        return mm
+    out = mm.copy()
+    starts = np.cumsum(n) - n
+    out.ravel()[np.repeat(row * w + first - starts, n) + np.arange(n.sum())] = \
+        np.repeat(np.maximum(mm[row, first - 1], mm[row, last + 1]), n)
+    return out
+
+
 def _pick_mode(stream, size: tuple[int, int], fps: float, pixel_format):
     modes = [m for m in stream.get_sensor_info().videoModes if m.pixelFormat == pixel_format]
     fits = [m for m in modes if (m.resolutionX, m.resolutionY) == size]
@@ -227,6 +303,7 @@ class AstraReader(FrameReader):
         self._lut_key = None
         self._lut = None
         self._dark = 0
+        self._clean = DepthCleaner()
 
     def open(self) -> None:
         s = self.spec
@@ -251,10 +328,13 @@ class AstraReader(FrameReader):
             _release(uri)
             raise SourceError(f"Astra {s.stream}: {_message(exc)}") from exc
         self._uri, self._stream, self._dark = uri, stream, 0
+        self._clean.reset()
         self.serial = _serials.get(uri, "")
 
     def update(self, spec) -> None:
-        self.spec = spec                  # depth_near / depth_far apply from the next frame
+        if spec.depth_clean != self.spec.depth_clean:
+            self._clean.reset()
+        self.spec = spec                  # depth range and clean-up apply from the next frame
 
     def _gray(self, mm: np.ndarray) -> np.ndarray:
         key = (self.spec.depth_near, self.spec.depth_far)
@@ -269,14 +349,15 @@ class AstraReader(FrameReader):
         f = self._stream.read_frame()
         if self.spec.stream == "depth":
             mm = np.frombuffer(f.get_buffer_as_uint16(), np.uint16).reshape(f.height, f.width)
-            gray = self._gray(mm)
-            self._check_dark(gray)
-            return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+            self._check_dark(mm)
+            if self.spec.depth_clean:
+                mm = self._clean(mm, time.perf_counter())
+            return cv2.cvtColor(self._gray(mm), cv2.COLOR_GRAY2BGR)
         rgb = np.frombuffer(f.get_buffer_as_uint8(), np.uint8).reshape(f.height, f.width, 3)
         return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
-    def _check_dark(self, gray: np.ndarray) -> None:
-        if gray.any():
+    def _check_dark(self, mm: np.ndarray) -> None:
+        if mm.any():
             if self._dark >= DARK_WARNING_FRAMES:
                 log.info("Astra %s: depth readings are back", self.serial or self.spec.index)
             self._dark = 0

@@ -221,6 +221,7 @@ def test_look_panel_edits_params_and_follows_mode(app, win):
     win.doc.set_param("mode", "depth")
     pump(app, 0.05)
     assert panel.widgets["colors"].isHidden() and not panel.widgets["depth_min"].isHidden()
+    assert not panel.widgets["depth_layers"].isHidden() and not panel.widgets["depth_palette"].isHidden()
     assert panel.groups["Colour"].isHidden()
     win.doc.set_param("mode", "colour")
     pump(app, 0.05)

@@ -114,7 +114,8 @@ class SourceSpec:
     after probing, the real frame size.  For files, the probed frame size.
     Astra depth cameras (core.astra): index among connected Astras, device_name =
     serial number, width / height = stream mode; depth_near / depth_far (metres)
-    map to white / black for depth mode and change without reopening.
+    map to white / black for depth mode; depth_clean fills holes and steadies
+    the depth (core.astra.DepthCleaner).  These three change without reopening.
     """
 
     kind: str = "webcam"
@@ -130,6 +131,7 @@ class SourceSpec:
     stream: str = "depth"    # astra: "depth" or "colour"
     depth_near: float = 0.5
     depth_far: float = 4.5
+    depth_clean: bool = True
 
     def label(self) -> str:
         if self.kind == "webcam":

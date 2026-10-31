@@ -281,10 +281,14 @@ class CameraPage(Page, PlacementMixin):
         self.depth_box = form3.parentWidget()
         self.near = dspin(0.0, 9.5, 0.05, 2, " m")
         self.far = dspin(0.5, 10.0, 0.05, 2, " m")
+        self.depth_clean = QCheckBox("Clean up")
+        self.depth_clean.setToolTip("Fill small holes (the shadow beside people, dropouts) and steady "
+                                    "the depth's noise, so outlines don't shimmer")
         form3.addRow("Near (white)", self.near)
         form3.addRow("Far (dark)", self.far)
-        form3.addRow(HintLabel("Depth mode's band (Band min / max, 0–255) picks a slice of this range; "
-                               "black = no reading."))
+        form3.addRow("", self.depth_clean)
+        form3.addRow(HintLabel("Depth mode's band (Band min / max, 0–255) picks a slice of this range "
+                               "and Layers cuts it into colours; black = no reading."))
 
         self.build_placement()
         form2 = self.group("Image")
@@ -315,6 +319,8 @@ class CameraPage(Page, PlacementMixin):
         self.feather.valueChanged.connect(lambda v: self.edit("Feather", lambda s: setattr(s, "feather", v)))
         self.near.valueChanged.connect(lambda v: self.edit("Depth near", lambda s: _set_depth_range(s.source, near=v)))
         self.far.valueChanged.connect(lambda v: self.edit("Depth far", lambda s: _set_depth_range(s.source, far=v)))
+        self.depth_clean.toggled.connect(
+            lambda v: self.edit("Depth clean-up", lambda s: setattr(s.source, "depth_clean", v), merge=False))
         self._statuses: dict[str, str] = {}
 
     def aspect(self, spec) -> float:
@@ -359,6 +365,7 @@ class CameraPage(Page, PlacementMixin):
         self.depth_box.setVisible(src.kind == "astra" and src.stream == "depth")
         set_quiet(self.near, src.depth_near)
         set_quiet(self.far, src.depth_far)
+        set_quiet(self.depth_clean, src.depth_clean)
 
 
 class ProjectorPage(Page, PlacementMixin):

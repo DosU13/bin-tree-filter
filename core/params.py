@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.filters import BG_PRESETS, FG_PRESETS, bgr_to_hex, hex_to_bgr
-from core.posterize import PALETTE_STYLES
+from core.posterize import DEPTH_PALETTES, PALETTE_STYLES
 
 KINDS = ("int", "float", "bool", "choice", "color", "path", "look")
 MODES = ("colour", "depth")
@@ -68,7 +68,7 @@ class Param:
 PARAMS: tuple[Param, ...] = (
     # --- Mode --------------------------------------------------------------
     Param("mode", "Mode", "Mode", "choice", "colour", choices=MODES,
-          help="colour: posterize the cameras; depth: two-colour depth band"),
+          help="colour: posterize the cameras; depth: slices of a depth camera's distance (near bright)"),
 
     # --- Tree --------------------------------------------------------------
     Param("max_depth", "Max depth", "Tree", "int", 8, 1, 12, 1, keys=("d", "D"),
@@ -115,8 +115,15 @@ PARAMS: tuple[Param, ...] = (
     Param("saturation", "Saturation", "Input", "float", 1.0, 0.0, 3.0, 0.1, keys=("t", "T"), mode="colour"),
 
     # --- Depth -------------------------------------------------------------
-    Param("depth_min", "Band min", "Depth", "int", 60, 0, 250, 5, keys=("a", "A"), mode="depth"),
-    Param("depth_max", "Band max", "Depth", "int", 140, 5, 255, 5, keys=("z", "Z"), mode="depth"),
+    Param("depth_min", "Band min", "Depth", "int", 60, 0, 250, 5, keys=("a", "A"), mode="depth",
+          help="Darkest (farthest) grey that gets ornament"),
+    Param("depth_max", "Band max", "Depth", "int", 140, 5, 255, 5, keys=("z", "Z"), mode="depth",
+          help="Brightest (nearest) grey that gets ornament"),
+    Param("depth_layers", "Layers", "Depth", "int", 1, 1, 8, 1, keys=("c", "C"), mode="depth",
+          help="Cut the band into this many slices by distance, each its own colour (1: one colour)"),
+    Param("depth_palette", "Layer colours", "Depth", "choice", "fade", choices=DEPTH_PALETTES, keys=("k",),
+          mode="depth", help="fade: the foreground colour fading into the background with distance; "
+                             "a palette: its colours, the nearest layer standing out most"),
     Param("depth_fg", "Foreground", "Depth", "color", bgr_to_hex(FG_PRESETS[0]),
           choices=tuple(bgr_to_hex(c) for c in FG_PRESETS), keys=("f",), mode="depth"),
     Param("depth_bg", "Background", "Depth", "color", bgr_to_hex(BG_PRESETS[0]),
@@ -177,6 +184,28 @@ PARAMS: tuple[Param, ...] = (
     Param("wave_glow", "Glow", "Waves", "float", 0.6, 0.0, 1.0, 0.05,
           help="How far the ornament under a ring tints towards the glow colour"),
     Param("wave_color", "Glow colour", "Waves", "color", "#b4232d"),
+
+    # --- Glow --------------------------------------------------------------
+    # Movement lights the ornament up; a small fluid simulation carries the light on (core.glow)
+    Param("glow", "Motion glow", "Glow", "bool", False, keys=("l",),
+          help="Movement lights the ornament up, and the light flows on.  The light takes the palette's "
+               "main colour (its red), which then lights only the glow"),
+    Param("glow_from", "Light from", "Glow", "choice", "motion", choices=("motion", "person", "both"),
+          help="motion: whatever moves; person: whoever is in front of the environment, even standing "
+               "still; both: the person dimmer, their movement full"),
+    Param("glow_color", "Light colour", "Glow", "color", "#ffffff",
+          help="Only without a palette (Layer colours fade, Palette style natural); "
+               "a palette lights the glow in its main colour"),
+    Param("glow_flow", "Flow", "Glow", "float", 1.0, 0.0, 4.0, 0.1,
+          help="How strongly movement pushes the light on (0: it stays where the movement was)"),
+    Param("glow_fade", "Fade (s)", "Glow", "float", 1.5, 0.1, 10.0, 0.1,
+          help="How long the light lasts"),
+    Param("glow_threshold", "Light threshold", "Glow", "int", 8, 2, 60, 1, look=False,
+          help="Grey-level change that counts (depth: 8 is about 12 cm with a 4 m range); "
+               "lower is more sensitive (show setting)"),
+    Param("glow_memory", "Environment memory (s)", "Glow", "float", 30.0, 2.0, 300.0, 1.0, look=False,
+          help="The environment is each pixel's most common value over this long; whoever stays "
+               "still longer becomes part of it (show setting)"),
 
     # --- Idle --------------------------------------------------------------
     Param("idle_look", "Idle look", "Idle", "look", "",
